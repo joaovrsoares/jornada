@@ -14,3 +14,8 @@ cd jornada
 
 docker compose -f compose.dev.yaml up --build -d
 ```
+
+Para acessar o banco de dados, utilizar o seguinte comando:
+```bash
+docker compose -f compose.dev.yaml exec db mariadb -u jornada -pjornada_dev jornada
+```
