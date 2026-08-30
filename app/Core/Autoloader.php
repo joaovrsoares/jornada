@@ -13,12 +13,14 @@ spl_autoload_register(function (string $class):void {
 
     $relativeClass = substr($class, strlen($prefix));
 
+    # Converte o namespace em caminho de diretório
     $file = __DIR__ . '/../' . str_replace(
         '\\',
         '/',
         $relativeClass
     ) . '.php';
 
+    # Se o arquivo existir, carrega a classe
     if (file_exists($file)) {
         require_once $file;
     }

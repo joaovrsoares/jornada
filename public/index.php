@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../app/Core/Autoloader.php';
 
+use App\Core\Env;
 use App\Core\Router;
+
+Env::load(__DIR__ . '/../.env');
 
 $router = new Router();
 

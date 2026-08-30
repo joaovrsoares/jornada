@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Controllers\HomeController;
+use App\Core\Router;
+
+$router = new Router();
 
 $router->get(
     '/',
@@ -12,4 +15,9 @@ $router->get(
 $router->get(
     '/sobre',
     [HomeController::class, 'sobre']
+);
+
+$router->get(
+    '/banco',
+    [HomeController::class, 'banco']
 );

@@ -1,5 +1,7 @@
 <?php
     declare (strict_types=1);
+    /** @var string $conteudo */
+    /** @var string|null $titulo */
     # Layout principal do sistema, que será usado em todas as páginas
 ?>
 
@@ -10,7 +12,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($titulo ?? 'Jornada') ?></title>
     <link rel="stylesheet" href="/assets/css/simple.min.css">
-    <link rel="stylesheet" href="/assets/css/app.css">
+    <link rel="stylesheet" href="/assets/css/app.css?v=<?= filemtime(__DIR__ . '/../../../public/assets/css/app.css') ?>">
 </head>
 
 <body>
@@ -22,7 +24,7 @@
 
             <nav class="sidebar-nav">
                 <a href="/">Dashboard</a>
-                <a href="/jornada">Jornada</a>
+                <a href="/jornada">Minha jornada</a>
                 <a href="/registros">Registros</a>
                 <a href="/relatorios">Relatórios</a>
                 <a href="/sobre">Sobre</a>

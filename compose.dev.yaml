@@ -24,10 +24,10 @@ services:
   db:
     image: mariadb:11
     environment:
-      MARIADB_DATABASE: jornada
-      MARIADB_USER: jornada
-      MARIADB_PASSWORD: jornada_dev
-      MARIADB_ROOT_PASSWORD: root_dev
+      MARIADB_DATABASE: ${DB_DATABASE}
+      MARIADB_USER: ${DB_USERNAME}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes:
       - jornada_db_data:/var/lib/mysql
     networks:
