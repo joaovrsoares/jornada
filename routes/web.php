@@ -16,8 +16,3 @@ $router->get(
     '/sobre',
     [HomeController::class, 'sobre']
 );
-
-$router->get(
-    '/banco',
-    [HomeController::class, 'banco']
-);

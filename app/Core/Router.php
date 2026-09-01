@@ -39,7 +39,7 @@ class Router
 
         # Verifica se o método existe no controlador
         if (!method_exists($controller, $controllerMethod)) {
-            throw new RuntimeException(
+            throw new \RuntimeException(
                 "Método {$controllerMethod} não encontrado no controlador {$controllerClass}."
             );
         }

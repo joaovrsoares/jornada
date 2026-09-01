@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
-use App\Core\Database;
 
 class HomeController extends Controller
 {
@@ -23,14 +22,5 @@ class HomeController extends Controller
             'titulo' => 'Sobre',
             'versao'=> 'dev'
         ]);
-    }
-
-    public function banco(): void
-    {
-        $pdo = Database::connection();
-
-        $resultado = $pdo->query('SELECT 1')->fetchColumn();
-
-        echo 'MariaDB respondeu: ' . $resultado;
     }
 }

@@ -7,7 +7,7 @@ namespace App\Core;
 class Env {
     public static function load(string $file): void {
         if (!file_exists($file)) {
-            throw new RuntimeException("Arquivo .env não encontrado.");
+            throw new \RuntimeException("Arquivo .env não encontrado.");
         }
 
         $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
