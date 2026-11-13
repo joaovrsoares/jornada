@@ -1,0 +1,837 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Core\Database;
+
+class RegistrarController extends Controller
+{
+    public const CAMPOS_BATIDA = [
+        'entrada' => 'Entrada',
+        'saida_intervalo' => 'Saída para intervalo',
+        'retorno_intervalo' => 'Retorno do intervalo',
+        'saida' => 'Saída',
+    ];
+
+    public const CAMPOS_BATIDA_CURTOS = [
+        'entrada' => 'Entrada',
+        'saida_intervalo' => 'Saí. int.',
+        'retorno_intervalo' => 'Retorno',
+        'saida' => 'Saída',
+    ];
+
+    public const ROTULOS_TIPO = [
+        'normal' => 'Normal',
+        'atestado' => 'Atestado',
+        'folga' => 'Folga',
+        'feriado' => 'Feriado',
+        'falta' => 'Falta',
+    ];
+
+    public const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    public const CLASSES_TIPO = [
+        'normal' => 'bg-stone-100 text-zinc-700 ring-1 ring-inset ring-stone-300/80',
+        'atestado' => 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-600/20',
+        'folga' => 'bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-600/20',
+        'feriado' => 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20',
+        'falta' => 'bg-red-50 text-red-800 ring-1 ring-inset ring-red-600/20',
+    ];
+
+    public const CLASSES_COMPROVACAO = [
+        'comprovado' => 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20',
+        'parcial' => 'bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-600/20',
+        'pendente' => 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20',
+        'isento' => 'bg-stone-100 text-zinc-500 ring-1 ring-inset ring-stone-300/70',
+    ];
+
+    public function index(): void
+    {
+        $pdo = Database::connection();
+        $hoje = date('Y-m-d');
+        $agora = date('H:i');
+
+        $dataAlvo = (string) ($_GET['data'] ?? $hoje);
+        if (!self::dataValida($dataAlvo)) {
+            $dataAlvo = $hoje;
+        }
+
+        $modo = ($_GET['modo'] ?? 'individual') === 'completo' ? 'completo' : 'individual';
+
+        $usuario = ConfiguracoesController::obterUsuario();
+        $cargaDiaria = $usuario['carga_diaria_minutos'];
+        $tolerancia = $usuario['tolerancia_minutos'];
+
+        $stmtDia = $pdo->prepare(
+            'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
+        );
+        $stmtDia->execute(['data' => $dataAlvo]);
+        $registroAtual = $stmtDia->fetch() ?: [
+            'data' => $dataAlvo,
+            'tipo' => 'normal',
+            'entrada' => null,
+            'saida_intervalo' => null,
+            'retorno_intervalo' => null,
+            'saida' => null,
+            'foto_entrada' => null,
+            'foto_saida_intervalo' => null,
+            'foto_retorno_intervalo' => null,
+            'foto_saida' => null,
+            'observacao' => null,
+        ];
+
+        $proximaBatida = null;
+        foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
+            if (empty($registroAtual[$campo])) {
+                $proximaBatida = $campo;
+                break;
+            }
+        }
+
+        $mesAlvo = substr($dataAlvo, 0, 7);
+        $todosRegistros = $pdo->query(
+            'SELECT * FROM registros_ponto WHERE usuario_id = 1'
+        )->fetchAll();
+
+        $saldoAnteriorMes = 0;
+        foreach ($todosRegistros as $reg) {
+            $dataReg = (string) $reg['data'];
+            if (str_starts_with($dataReg, $mesAlvo) && $dataReg !== $dataAlvo) {
+                $s = self::calcularSaldoDia($reg, $cargaDiaria, $tolerancia);
+                if ($s !== null) {
+                    $saldoAnteriorMes += $s;
+                }
+            }
+        }
+
+        $assistente = self::calcularAssistenteDia($registroAtual, $cargaDiaria, $saldoAnteriorMes);
+
+        $this->view('registrar/index', [
+            'titulo' => 'Registrar',
+            'hoje' => $hoje,
+            'agora' => $agora,
+            'modo' => $modo,
+            'camposBatida' => self::CAMPOS_BATIDA,
+            'proximaBatida' => $proximaBatida,
+            'registroAtual' => $registroAtual,
+            'assistente' => $assistente,
+            'mapaCalendario' => self::obterMapaCalendario($todosRegistros),
+        ]);
+    }
+
+    public function salvar(): void
+    {
+        $pdo = Database::connection();
+        $data = (string) ($_POST['data'] ?? date('Y-m-d'));
+        if (!self::dataValida($data)) {
+            $data = date('Y-m-d');
+        }
+        $modo = ($_POST['modo'] ?? 'individual') === 'completo' ? 'completo' : 'individual';
+
+        $stmtDia = $pdo->prepare(
+            'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
+        );
+        $stmtDia->execute(['data' => $data]);
+        $existente = $stmtDia->fetch() ?: [
+            'tipo' => 'normal',
+            'entrada' => null,
+            'saida_intervalo' => null,
+            'retorno_intervalo' => null,
+            'saida' => null,
+            'foto_entrada' => null,
+            'foto_saida_intervalo' => null,
+            'foto_retorno_intervalo' => null,
+            'foto_saida' => null,
+            'observacao' => null,
+        ];
+
+        $limparHora = static fn(?string $v): ?string => ($v !== null && trim($v) !== '') ? substr(trim($v), 0, 5) : null;
+
+        $candidato = [
+            'tipo' => $existente['tipo'] ?? 'normal',
+            'entrada' => $existente['entrada'] ? substr((string) $existente['entrada'], 0, 5) : null,
+            'saida_intervalo' => $existente['saida_intervalo'] ? substr((string) $existente['saida_intervalo'], 0, 5) : null,
+            'retorno_intervalo' => $existente['retorno_intervalo'] ? substr((string) $existente['retorno_intervalo'], 0, 5) : null,
+            'saida' => $existente['saida'] ? substr((string) $existente['saida'], 0, 5) : null,
+            'foto_entrada' => $existente['foto_entrada'] ?? null,
+            'foto_saida_intervalo' => $existente['foto_saida_intervalo'] ?? null,
+            'foto_retorno_intervalo' => $existente['foto_retorno_intervalo'] ?? null,
+            'foto_saida' => $existente['foto_saida'] ?? null,
+            'observacao' => $existente['observacao'] ?? null,
+        ];
+
+        if ($modo === 'individual') {
+            $campo = $_POST['campo'] ?? '';
+            if (!array_key_exists($campo, self::CAMPOS_BATIDA)) {
+                $this->redirect("/registrar?modo=individual&data={$data}", [
+                    'erro' => 'Selecione uma etapa válida da jornada.',
+                ]);
+            }
+
+            if (!empty($existente[$campo])) {
+                $rotulo = self::CAMPOS_BATIDA[$campo];
+                $horaExistente = substr((string) $existente[$campo], 0, 5);
+                $this->redirect("/registrar?modo=individual&data={$data}", [
+                    'erro' => "{$rotulo} já foi registrada às {$horaExistente} neste dia. Para corrigir um horário já lançado, use Minha jornada.",
+                ]);
+            }
+
+            $hora = $limparHora($_POST['hora'] ?? null) ?? date('H:i');
+            $candidato[$campo] = $hora;
+
+            $erro = self::validarBatidas($candidato);
+            if ($erro !== null) {
+                $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erro]);
+            }
+
+            if (!empty($_FILES['foto']) && ($_FILES['foto']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                [$caminhoFoto, $erroFoto] = $this->processarUploadFoto($_FILES['foto'], $data, $campo, $candidato['foto_' . $campo]);
+                if ($erroFoto !== null) {
+                    $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erroFoto]);
+                }
+                $candidato['foto_' . $campo] = $caminhoFoto;
+            }
+        } else {
+            $tipo = $_POST['tipo'] ?? 'normal';
+            if (!array_key_exists($tipo, self::ROTULOS_TIPO)) {
+                $tipo = 'normal';
+            }
+
+            $candidato['tipo'] = $tipo;
+            $candidato['entrada'] = $limparHora($_POST['entrada'] ?? null);
+            $candidato['saida_intervalo'] = $limparHora($_POST['saida_intervalo'] ?? null);
+            $candidato['retorno_intervalo'] = $limparHora($_POST['retorno_intervalo'] ?? null);
+            $candidato['saida'] = $limparHora($_POST['saida'] ?? null);
+            $candidato['observacao'] = trim($_POST['observacao'] ?? '') ?: null;
+
+            $erro = self::validarBatidas($candidato);
+            if ($erro !== null) {
+                $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erro]);
+            }
+
+            foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
+                $colFoto = 'foto_' . $campo;
+                $inputKey = 'foto_' . $campo;
+
+                if ($candidato[$campo] === null && $candidato[$colFoto] !== null) {
+                    $this->removerArquivoFoto($candidato[$colFoto]);
+                    $candidato[$colFoto] = null;
+                    continue;
+                }
+
+                if (!empty($_FILES[$inputKey]) && ($_FILES[$inputKey]['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                    if ($candidato[$campo] === null) {
+                        $rotulo = self::CAMPOS_BATIDA[$campo];
+                        $this->redirect("/registrar?modo={$modo}&data={$data}", [
+                            'erro' => "Preencha o horário de {$rotulo} para anexar o comprovante.",
+                        ]);
+                    }
+
+                    [$caminhoFoto, $erroFoto] = $this->processarUploadFoto($_FILES[$inputKey], $data, $campo, $candidato[$colFoto]);
+                    if ($erroFoto !== null) {
+                        $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erroFoto]);
+                    }
+                    $candidato[$colFoto] = $caminhoFoto;
+                }
+            }
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO registros_ponto
+                (usuario_id, data, tipo, entrada, saida_intervalo, retorno_intervalo, saida,
+                 foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida, observacao)
+             VALUES
+                (1, :data, :tipo, :entrada, :saida_intervalo, :retorno_intervalo, :saida,
+                 :foto_entrada, :foto_saida_intervalo, :foto_retorno_intervalo, :foto_saida, :observacao)
+             ON DUPLICATE KEY UPDATE
+                tipo = VALUES(tipo),
+                entrada = VALUES(entrada),
+                saida_intervalo = VALUES(saida_intervalo),
+                retorno_intervalo = VALUES(retorno_intervalo),
+                saida = VALUES(saida),
+                foto_entrada = VALUES(foto_entrada),
+                foto_saida_intervalo = VALUES(foto_saida_intervalo),
+                foto_retorno_intervalo = VALUES(foto_retorno_intervalo),
+                foto_saida = VALUES(foto_saida),
+                observacao = VALUES(observacao)'
+        );
+
+        $stmt->execute([
+            'data' => $data,
+            'tipo' => $candidato['tipo'],
+            'entrada' => $candidato['entrada'],
+            'saida_intervalo' => $candidato['saida_intervalo'],
+            'retorno_intervalo' => $candidato['retorno_intervalo'],
+            'saida' => $candidato['saida'],
+            'foto_entrada' => $candidato['foto_entrada'],
+            'foto_saida_intervalo' => $candidato['foto_saida_intervalo'],
+            'foto_retorno_intervalo' => $candidato['foto_retorno_intervalo'],
+            'foto_saida' => $candidato['foto_saida'],
+            'observacao' => $candidato['observacao'],
+        ]);
+
+        $this->redirect("/registrar?modo={$modo}&data={$data}", ['salvo' => true]);
+    }
+
+    public function removerFoto(): void
+    {
+        $data = (string) ($_POST['data'] ?? '');
+        $campo = (string) ($_POST['remover_foto'] ?? '');
+        $dataSegura = self::dataValida($data) ? $data : date('Y-m-d');
+        $voltar = '/registrar?modo=completo&data=' . urlencode($dataSegura);
+
+        if (!self::dataValida($data) || !array_key_exists($campo, self::CAMPOS_BATIDA)) {
+            $this->redirect($voltar, ['erro' => 'Não foi possível identificar o comprovante a remover.']);
+        }
+
+        $pdo = Database::connection();
+        $colFoto = 'foto_' . $campo;
+
+        $stmt = $pdo->prepare(
+            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = 1 AND data = :data"
+        );
+        $stmt->execute(['data' => $data]);
+        $relativo = $stmt->fetchColumn();
+
+        if (!$relativo) {
+            $this->redirect($voltar, ['erro' => 'Este comprovante já não está anexado ao registro.']);
+        }
+
+        $this->removerArquivoFoto((string) $relativo);
+
+        $stmtAtualiza = $pdo->prepare(
+            "UPDATE registros_ponto SET {$colFoto} = NULL WHERE usuario_id = 1 AND data = :data"
+        );
+        $stmtAtualiza->execute(['data' => $data]);
+
+        $this->redirect($voltar, ['foto_removida' => self::CAMPOS_BATIDA[$campo]]);
+    }
+
+    public function comprovante(): void
+    {
+        $data = (string) ($_GET['data'] ?? '');
+        $campo = (string) ($_GET['campo'] ?? '');
+
+        if (!self::dataValida($data) || !array_key_exists($campo, self::CAMPOS_BATIDA)) {
+            http_response_code(404);
+            echo 'Comprovante não encontrado.';
+            return;
+        }
+
+        $colFoto = 'foto_' . $campo;
+        $stmt = Database::connection()->prepare(
+            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = 1 AND data = :data"
+        );
+        $stmt->execute(['data' => $data]);
+        $relativo = $stmt->fetchColumn();
+
+        if (!$relativo) {
+            http_response_code(404);
+            echo 'Comprovante não encontrado.';
+            return;
+        }
+
+        $baseDir = realpath(__DIR__ . '/../../storage/comprovantes');
+        $caminhoAbsoluto = $baseDir ? realpath($baseDir . '/' . $relativo) : false;
+
+        if (!$baseDir || !$caminhoAbsoluto || !str_starts_with($caminhoAbsoluto, $baseDir) || !is_file($caminhoAbsoluto)) {
+            http_response_code(404);
+            echo 'Arquivo de comprovante não encontrado.';
+            return;
+        }
+
+        $info = @getimagesize($caminhoAbsoluto);
+        $mime = $info['mime'] ?? 'image/webp';
+        $ext = pathinfo($caminhoAbsoluto, PATHINFO_EXTENSION) ?: 'webp';
+
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . (string) filesize($caminhoAbsoluto));
+        header('Cache-Control: private, no-cache');
+
+        if (!empty($_GET['download'])) {
+            $nomeDownload = "comprovante-{$data}-{$campo}.{$ext}";
+            header("Content-Disposition: attachment; filename=\"{$nomeDownload}\"");
+        }
+
+        readfile($caminhoAbsoluto);
+        exit;
+    }
+
+    public function excluir(): void
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        $mes = $_POST['mes'] ?? date('Y-m');
+
+        if ($id > 0) {
+            $pdo = Database::connection();
+            $stmtBusca = $pdo->prepare(
+                'SELECT foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida
+                 FROM registros_ponto WHERE id = :id AND usuario_id = 1'
+            );
+            $stmtBusca->execute(['id' => $id]);
+            $reg = $stmtBusca->fetch();
+
+            if ($reg) {
+                foreach ($reg as $foto) {
+                    $this->removerArquivoFoto($foto);
+                }
+            }
+
+            $stmt = $pdo->prepare(
+                'DELETE FROM registros_ponto WHERE id = :id AND usuario_id = 1'
+            );
+            $stmt->execute(['id' => $id]);
+        }
+
+        $this->redirect("/jornada?mes={$mes}", ['salvo' => true]);
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string} [caminhoRelativo, mensagemErro]
+     */
+    private function processarUploadFoto(array $arquivo, string $data, string $campo, ?string $fotoAnterior): array
+    {
+        if (($arquivo['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return [null, 'Falha no envio da imagem do comprovante (limite do servidor excedido ou upload incompleto).'];
+        }
+
+        if (($arquivo['size'] ?? 0) > 3 * 1024 * 1024) {
+            return [null, 'A imagem do comprovante deve ter no máximo 3 MB.'];
+        }
+
+        $tmp = $arquivo['tmp_name'] ?? '';
+        $info = $tmp !== '' ? @getimagesize($tmp) : false;
+        if ($info === false) {
+            $extNome = strtolower(pathinfo((string) ($arquivo['name'] ?? ''), PATHINFO_EXTENSION));
+            if (in_array($extNome, ['heic', 'heif'], true)) {
+                return [null, 'Fotos em HEIC do iPhone não são suportadas diretamente. Converta a imagem para JPG ou tire a foto novamente pelo navegador.'];
+            }
+            return [null, 'O arquivo enviado não é uma imagem válida.'];
+        }
+
+        $mapaExt = [
+            IMAGETYPE_WEBP => 'webp',
+            IMAGETYPE_JPEG => 'jpg',
+            IMAGETYPE_PNG => 'png',
+        ];
+
+        $tipoImg = $info[2] ?? 0;
+        if (!isset($mapaExt[$tipoImg])) {
+            return [null, 'Formato de imagem não suportado. Use WebP, JPG ou PNG.'];
+        }
+
+        $ext = $mapaExt[$tipoImg];
+        $subpasta = substr($data, 0, 7);
+        $dirDestino = __DIR__ . '/../../storage/comprovantes/' . $subpasta;
+
+        if (!is_dir($dirDestino) && !mkdir($dirDestino, 0775, true) && !is_dir($dirDestino)) {
+            return [null, 'Não foi possível criar a pasta de armazenamento de comprovantes.'];
+        }
+
+        $nomeArquivo = "1_{$data}_{$campo}.{$ext}";
+        $relativo = "{$subpasta}/{$nomeArquivo}";
+        $destinoAbsoluto = "{$dirDestino}/{$nomeArquivo}";
+
+        if ($fotoAnterior !== null && $fotoAnterior !== $relativo) {
+            $this->removerArquivoFoto($fotoAnterior);
+        }
+
+        if (!move_uploaded_file($tmp, $destinoAbsoluto)) {
+            return [null, 'Não foi possível salvar a foto do comprovante.'];
+        }
+
+        return [$relativo, null];
+    }
+
+    private function removerArquivoFoto(?string $relativo): void
+    {
+        if (!$relativo) {
+            return;
+        }
+        $caminho = __DIR__ . '/../../storage/comprovantes/' . $relativo;
+        if (is_file($caminho)) {
+            @unlink($caminho);
+        }
+    }
+
+    public static function statusComprovacao(array $r): array
+    {
+        $batidas = 0;
+        $fotos = 0;
+
+        foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
+            if (!empty($r[$campo])) {
+                $batidas++;
+                if (!empty($r['foto_' . $campo])) {
+                    $fotos++;
+                }
+            }
+        }
+
+        if ($batidas === 0) {
+            return ['batidas' => 0, 'fotos' => 0, 'status' => 'isento', 'rotulo' => '—', 'rotulo_curto' => '—'];
+        }
+
+        if ($fotos === $batidas) {
+            return [
+                'batidas' => $batidas,
+                'fotos' => $fotos,
+                'status' => 'comprovado',
+                'rotulo' => 'Comprovado',
+                'rotulo_curto' => "Fotos {$fotos}/{$batidas}",
+            ];
+        }
+
+        if ($fotos > 0) {
+            return [
+                'batidas' => $batidas,
+                'fotos' => $fotos,
+                'status' => 'parcial',
+                'rotulo' => "Parcial ({$fotos}/{$batidas})",
+                'rotulo_curto' => "Fotos {$fotos}/{$batidas}",
+            ];
+        }
+
+        return ['batidas' => $batidas, 'fotos' => 0, 'status' => 'pendente', 'rotulo' => 'Sem foto', 'rotulo_curto' => 'Sem foto'];
+    }
+
+    public static function renderizarCelulaBatida(array $item, string $campo): string
+    {
+        $valor = !empty($item[$campo]) ? substr((string) $item[$campo], 0, 5) : '';
+        if ($valor === '') {
+            return '—';
+        }
+
+        if (empty($item['foto_' . $campo])) {
+            return htmlspecialchars($valor);
+        }
+
+        $dataIso = (string) ($item['data'] ?? '');
+        $dataBr = date('d/m/Y', strtotime($dataIso));
+        $rotulo = self::CAMPOS_BATIDA[$campo] ?? $campo;
+        $url = '/comprovante?data=' . urlencode($dataIso) . '&campo=' . urlencode($campo);
+        $titulo = "{$rotulo} — {$dataBr} às {$valor}";
+
+        return sprintf(
+            '<button type="button" class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-emerald-200/80 bg-emerald-50/70 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-emerald-900 transition-colors hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600" data-comprovante-url="%s" data-comprovante-titulo="%s" title="Ver ticket de %s">%s <span class="text-[10px] font-bold text-emerald-600" aria-hidden="true">✓</span></button>',
+            htmlspecialchars($url),
+            htmlspecialchars($titulo),
+            htmlspecialchars(strtolower($rotulo)),
+            htmlspecialchars($valor)
+        );
+    }
+
+    public static function dataValida(string $data): bool
+    {
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $data, $m)) {
+            return false;
+        }
+
+        return checkdate((int) $m[2], (int) $m[3], (int) $m[1]);
+    }
+
+    public static function mesValido(string $mes): bool
+    {
+        if (!preg_match('/^(\d{4})-(\d{2})$/', $mes, $m)) {
+            return false;
+        }
+
+        return checkdate((int) $m[2], 1, (int) $m[1]);
+    }
+
+    public static function deslocarMes(string $anoMes, int $deltaMeses): string
+    {
+        $ts = strtotime($anoMes . '-01 ' . ($deltaMeses >= 0 ? "+{$deltaMeses}" : (string) $deltaMeses) . ' month');
+        return date('Y-m', $ts ?: time());
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function obterMapaCalendario(?array $registros = null): array
+    {
+        if ($registros === null) {
+            $registros = Database::connection()->query(
+                'SELECT data, tipo, entrada, saida FROM registros_ponto WHERE usuario_id = 1'
+            )->fetchAll();
+        }
+
+        $mapa = [];
+        foreach ($registros as $reg) {
+            $status = self::statusDoRegistro($reg);
+            if ($status !== 'vazio') {
+                $mapa[(string) $reg['data']] = $status;
+            }
+        }
+
+        return $mapa;
+    }
+
+    public static function statusDoRegistro(array $r): string
+    {
+        $tipo = (string) ($r['tipo'] ?? 'normal');
+
+        if ($tipo === 'falta') {
+            return 'falta';
+        }
+
+        if (in_array($tipo, ['folga', 'feriado', 'atestado'], true)) {
+            return 'ocorrencia';
+        }
+
+        if (!empty($r['saida'])) {
+            return 'concluido';
+        }
+
+        if (!empty($r['entrada'])) {
+            return 'andamento';
+        }
+
+        return 'vazio';
+    }
+
+    public static function paraMinutos(?string $hora): ?int
+    {
+        if ($hora === null || $hora === '') {
+            return null;
+        }
+
+        $curta = substr(trim($hora), 0, 5);
+        if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $curta)) {
+            return null;
+        }
+
+        [$h, $m] = explode(':', $curta);
+        return ((int) $h * 60) + (int) $m;
+    }
+
+    public static function validarBatidas(array $d): ?string
+    {
+        foreach (self::CAMPOS_BATIDA as $campo => $rotulo) {
+            if (!empty($d[$campo]) && self::paraMinutos((string) $d[$campo]) === null) {
+                return "Horário inválido em {$rotulo}. Utilize o formato HH:MM (00:00 a 23:59).";
+            }
+        }
+
+        $e1 = $d['entrada'] ?? null;
+        $s1 = $d['saida_intervalo'] ?? null;
+        $e2 = $d['retorno_intervalo'] ?? null;
+        $s2 = $d['saida'] ?? null;
+
+        if (($s1 !== null || $e2 !== null || $s2 !== null) && $e1 === null) {
+            return 'Registre o horário de Entrada antes de lançar as demais batidas do dia.';
+        }
+
+        if ($e2 !== null && $s1 === null) {
+            return 'Registre a Saída para intervalo antes de lançar o Retorno do intervalo.';
+        }
+
+        if ($s2 !== null && $s1 !== null && $e2 === null) {
+            return 'Registre o Retorno do intervalo antes de lançar a Saída final.';
+        }
+
+        $sequencia = [];
+        foreach (self::CAMPOS_BATIDA as $campo => $rotulo) {
+            $min = self::paraMinutos($d[$campo] ?? null);
+            if ($min !== null) {
+                $sequencia[] = [
+                    'rotulo' => $rotulo,
+                    'hora' => substr((string) $d[$campo], 0, 5),
+                    'min' => $min,
+                ];
+            }
+        }
+
+        for ($i = 1, $n = count($sequencia); $i < $n; $i++) {
+            $anterior = $sequencia[$i - 1];
+            $atual = $sequencia[$i];
+            if ($atual['min'] <= $anterior['min']) {
+                return sprintf(
+                    'Horário inválido: %s (%s) deve ser posterior a %s (%s).',
+                    $atual['rotulo'],
+                    $atual['hora'],
+                    $anterior['rotulo'],
+                    $anterior['hora']
+                );
+            }
+        }
+
+        return null;
+    }
+
+    public static function calcularAssistenteDia(array $r, int $cargaDiariaMinutos, int $saldoAnteriorMes): array
+    {
+        $vazio = ['saida_prevista' => null, 'nota_intervalo' => null, 'compensacao' => null];
+
+        if (($r['tipo'] ?? 'normal') !== 'normal') {
+            return $vazio;
+        }
+
+        $dataRef = (string) ($r['data'] ?? date('Y-m-d'));
+        $diaSemana = (int) date('w', strtotime($dataRef));
+        if ($diaSemana === 0 || $diaSemana === 6) {
+            return $vazio;
+        }
+
+        $paraHora = static fn(int $min): string => sprintf('%02d:%02d', intdiv($min, 60) % 24, $min % 60);
+
+        $e1 = self::paraMinutos($r['entrada'] ?? null);
+        $s1 = self::paraMinutos($r['saida_intervalo'] ?? null);
+        $e2 = self::paraMinutos($r['retorno_intervalo'] ?? null);
+        $s2 = self::paraMinutos($r['saida'] ?? null);
+
+        $saidaPrevista = null;
+        $saidaPrevistaMin = null;
+        $notaIntervalo = null;
+
+        if ($e1 !== null && $s2 === null) {
+            if ($s1 !== null && $e2 !== null) {
+                $intervalo = $e2 - $s1;
+                $saidaPrevistaMin = $e1 + $cargaDiariaMinutos + $intervalo;
+                $notaIntervalo = sprintf('considerando %d min de intervalo realizado', $intervalo);
+            } elseif ($s1 !== null && $e2 === null) {
+                $saidaPrevistaMin = $e1 + $cargaDiariaMinutos + 60;
+                $notaIntervalo = 'em intervalo — estimando 1h de pausa';
+            } else {
+                $saidaPrevistaMin = $e1 + $cargaDiariaMinutos + 60;
+                $notaIntervalo = 'estimando 1h de intervalo (ou ' . $paraHora($e1 + $cargaDiariaMinutos) . ' direto)';
+            }
+            $saidaPrevista = $paraHora($saidaPrevistaMin);
+        }
+
+        $compensacao = null;
+        $mesCorrente = substr($dataRef, 0, 7) === date('Y-m');
+        if ($saldoAnteriorMes < 0 && $mesCorrente && $s2 === null) {
+            $debito = abs($saldoAnteriorMes);
+            $diasUteisRestantes = self::contarDiasUteisRestantes($dataRef);
+
+            if ($debito <= 20 || $diasUteisRestantes <= 1) {
+                $minutosHoje = min($debito, 120);
+                $diasNecessarios = 1;
+            } else {
+                $porDia = (int) ceil($debito / $diasUteisRestantes);
+                $minutosHoje = min($debito, max(15, min(120, $porDia)));
+                $diasNecessarios = (int) ceil($debito / $minutosHoje);
+            }
+
+            $compensacao = [
+                'debito_total' => self::formatarMinutos($debito),
+                'minutos_por_dia' => $minutosHoje,
+                'dias_necessarios' => $diasNecessarios,
+                'dias_uteis_restantes' => $diasUteisRestantes,
+                'saida_com_compensacao' => $saidaPrevistaMin !== null ? $paraHora($saidaPrevistaMin + $minutosHoje) : null,
+            ];
+        }
+
+        return [
+            'saida_prevista' => $saidaPrevista,
+            'nota_intervalo' => $notaIntervalo,
+            'compensacao' => $compensacao,
+        ];
+    }
+
+    private static function contarDiasUteisRestantes(string $dataIso): int
+    {
+        $ts = strtotime($dataIso);
+        $ultimoDia = (int) date('t', $ts);
+        $diaAtual = (int) date('j', $ts);
+        $anoMes = date('Y-m-', $ts);
+
+        $uteis = 0;
+        for ($d = $diaAtual; $d <= $ultimoDia; $d++) {
+            $sem = (int) date('w', strtotime($anoMes . sprintf('%02d', $d)));
+            if ($sem >= 1 && $sem <= 5) {
+                $uteis++;
+            }
+        }
+
+        return max(1, $uteis);
+    }
+
+    public static function calcularMinutos(array $r): int
+    {
+        $e1 = self::paraMinutos($r['entrada'] ?? null);
+        $s1 = self::paraMinutos($r['saida_intervalo'] ?? null);
+        $e2 = self::paraMinutos($r['retorno_intervalo'] ?? null);
+        $s2 = self::paraMinutos($r['saida'] ?? null);
+
+        if ($e1 !== null && $s1 !== null && $e2 !== null && $s2 !== null) {
+            return max(0, ($s1 - $e1) + ($s2 - $e2));
+        }
+
+        if ($e1 !== null && $s2 !== null && $s1 === null && $e2 === null) {
+            return max(0, $s2 - $e1);
+        }
+
+        if ($e1 !== null && $s1 !== null && $s2 === null) {
+            return max(0, $s1 - $e1);
+        }
+
+        return 0;
+    }
+
+    public static function calcularSaldoDia(array $r, int $cargaDiariaMinutos, int $toleranciaMinutos = 0): ?int
+    {
+        $tipo = $r['tipo'] ?? 'normal';
+        $trabalhado = self::calcularMinutos($r);
+
+        if (in_array($tipo, ['atestado', 'feriado', 'folga'], true)) {
+            return $trabalhado;
+        }
+
+        $diaSemana = isset($r['data']) ? (int) date('w', strtotime((string) $r['data'])) : 1;
+        $fimDeSemana = ($diaSemana === 0 || $diaSemana === 6);
+        $metaDia = $fimDeSemana ? 0 : $cargaDiariaMinutos;
+
+        if ($tipo === 'falta') {
+            return -$metaDia;
+        }
+
+        if (empty($r['saida'])) {
+            return null;
+        }
+
+        $diferenca = $trabalhado - $metaDia;
+
+        if (!$fimDeSemana && $toleranciaMinutos > 0 && abs($diferenca) <= $toleranciaMinutos) {
+            return 0;
+        }
+
+        return $diferenca;
+    }
+
+    public static function formatarMinutos(int $minutos, bool $exibirSinal = false): string
+    {
+        $sinal = $minutos < 0 ? '-' : ($exibirSinal && $minutos > 0 ? '+' : '');
+        $abs = abs($minutos);
+        return sprintf('%s%02dh %02dmin', $sinal, intdiv($abs, 60), $abs % 60);
+    }
+
+    public static function formatarMesAno(string $anoMes): string
+    {
+        $meses = [
+            '01' => 'Janeiro', '02' => 'Fevereiro', '03' => 'Março', '04' => 'Abril',
+            '05' => 'Maio', '06' => 'Junho', '07' => 'Julho', '08' => 'Agosto',
+            '09' => 'Setembro', '10' => 'Outubro', '11' => 'Novembro', '12' => 'Dezembro',
+        ];
+        [$ano, $mes] = array_pad(explode('-', $anoMes), 2, '');
+        return ($meses[$mes] ?? $mes) . ' de ' . $ano;
+    }
+
+    public static function classeBadgeSaldo(?int $saldo): string
+    {
+        if ($saldo === null) {
+            return 'bg-stone-100 text-zinc-600 ring-1 ring-inset ring-stone-300/80';
+        }
+        if ($saldo > 0) {
+            return 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20';
+        }
+        if ($saldo < 0) {
+            return 'bg-red-50 text-red-800 ring-1 ring-inset ring-red-600/20';
+        }
+        return 'bg-stone-100 text-zinc-700 ring-1 ring-inset ring-stone-300/80';
+    }
+}

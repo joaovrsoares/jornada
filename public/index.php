@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('America/Sao_Paulo');
+session_start();
+
 require_once __DIR__ . '/../app/Core/Autoloader.php';
 
 use App\Core\Env;
