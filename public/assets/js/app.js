@@ -12,7 +12,7 @@ if (btnAgora && inputHora) {
     });
 }
 
-/* Widget de Calendário do Sistema (presente em /, /jornada, /registrar e /relatorios) */
+/* Widget de Calendário do Sistema (presente em /jornada e /registrar) */
 const widgetCalendario = document.getElementById('widget-calendario');
 if (widgetCalendario) {
     const btnToggle = document.getElementById('btn-calendario');
@@ -28,10 +28,11 @@ if (widgetCalendario) {
 
     const escopo = widgetCalendario.dataset.escopo || 'dia';
     const rotaBase = widgetCalendario.dataset.rotaBase || '/registrar';
+    // O Painel é somente do mês corrente: selecionar um mês leva ao Espelho.
+    const rotaMes = widgetCalendario.dataset.rotaMes || rotaBase;
     const dataSelecionada = widgetCalendario.dataset.dataSelecionada || '';
     const mesSelecionado = widgetCalendario.dataset.mesSelecionado || dataSelecionada.slice(0, 7);
     const hojeIso = widgetCalendario.dataset.hoje || '';
-    const modo = widgetCalendario.dataset.modo || 'individual';
 
     let mapaRegistros = {};
     try {
@@ -56,6 +57,13 @@ if (widgetCalendario) {
         falta: 'size-1.5 rounded-full bg-red-400',
     };
 
+    const rotulosPontoStatus = {
+        concluido: 'dia completo',
+        andamento: 'em aberto',
+        ocorrencia: 'folga, feriado ou atestado',
+        falta: 'falta',
+    };
+
     const refInicial = (escopo === 'dia' && dataSelecionada) ? dataSelecionada : `${mesSelecionado}-01`;
     const partesIniciais = refInicial.split('-').map(Number);
     let anoVisivel = partesIniciais[0] || new Date().getFullYear();
@@ -71,11 +79,11 @@ if (widgetCalendario) {
     }
 
     const irParaData = (iso) => {
-        window.location.href = `/registrar?modo=${encodeURIComponent(modo)}&data=${encodeURIComponent(iso)}`;
+        window.location.href = `${rotaBase}?data=${encodeURIComponent(iso)}`;
     };
 
     const irParaMes = (anoMes) => {
-        window.location.href = `${rotaBase}?mes=${encodeURIComponent(anoMes)}`;
+        window.location.href = `${rotaMes}?mes=${encodeURIComponent(anoMes)}`;
     };
 
     const renderizarCalendario = () => {
@@ -152,7 +160,11 @@ if (widgetCalendario) {
             }
 
             btnDia.className = `${baseBtn} ${varianteBtn}`;
-            btnDia.setAttribute('aria-label', `${diaStr}/${mesStr}/${anoVisivel}`);
+
+            const partesRotulo = [`${diaStr}/${mesStr}/${anoVisivel}`];
+            if (ehHoje) partesRotulo.push('hoje');
+            if (status && rotulosPontoStatus[status]) partesRotulo.push(rotulosPontoStatus[status]);
+            btnDia.setAttribute('aria-label', partesRotulo.join(', '));
             if (selecionado) {
                 btnDia.setAttribute('aria-current', 'date');
             }
@@ -191,26 +203,24 @@ if (widgetCalendario) {
         btnToggle.addEventListener('click', () => alternarPainel());
     }
 
+    const mudarMes = (delta) => {
+        mesVisivel += delta;
+        if (mesVisivel < 0) {
+            mesVisivel = 11;
+            anoVisivel--;
+        } else if (mesVisivel > 11) {
+            mesVisivel = 0;
+            anoVisivel++;
+        }
+        renderizarCalendario();
+    };
+
     if (btnMesAnt) {
-        btnMesAnt.addEventListener('click', () => {
-            mesVisivel--;
-            if (mesVisivel < 0) {
-                mesVisivel = 11;
-                anoVisivel--;
-            }
-            renderizarCalendario();
-        });
+        btnMesAnt.addEventListener('click', () => mudarMes(-1));
     }
 
     if (btnProxMes) {
-        btnProxMes.addEventListener('click', () => {
-            mesVisivel++;
-            if (mesVisivel > 11) {
-                mesVisivel = 0;
-                anoVisivel++;
-            }
-            renderizarCalendario();
-        });
+        btnProxMes.addEventListener('click', () => mudarMes(1));
     }
 
     if (btnIrHoje && hojeIso) {
@@ -291,7 +301,7 @@ const comprimirImagem = async (arquivo) => {
         ext = 'jpg';
     }
 
-    const nomeBase = arquivo.name.replace(/\.[^.]+$/, '') || 'ticket';
+    const nomeBase = arquivo.name.replace(/\.[^.]+$/, '') || 'comprovante';
     return new File([blob], `${nomeBase}.${ext}`, {
         type: blob.type,
         lastModified: Date.now(),
@@ -306,7 +316,8 @@ document.querySelectorAll('input[type="file"][data-comprimir]').forEach((input) 
         const arquivo = input.files && input.files[0];
         if (!arquivo) return;
 
-        const statusEl = input.parentElement.querySelector('[data-status-foto]');
+        const statusEl = input.closest('[data-foto-campo]')?.querySelector('[data-status-foto]')
+            || input.parentElement.querySelector('[data-status-foto]');
         const form = input.closest('form');
         const btnSubmit = form ? form.querySelector('button[type="submit"]') : null;
 
@@ -379,6 +390,101 @@ if (modal && modalImg) {
 
     modal.addEventListener('click', (e) => {
         if (e.target === modal) modal.close();
+    });
+}
+
+/* Diálogo de confirmação reutilizável (substitui os confirm() do navegador)
+   Uso: no <form> ou link, data-confirmar="mensagem" e, opcionalmente,
+   data-confirmar-titulo, data-confirmar-acao e data-confirmar-tom (perigo|padrao). */
+const dialogoConfirmacao = document.getElementById('dialogo-confirmacao');
+
+if (dialogoConfirmacao) {
+    const tituloConfirmacao = document.getElementById('confirmacao-titulo');
+    const mensagemConfirmacao = document.getElementById('confirmacao-mensagem');
+    const iconeConfirmacao = document.getElementById('confirmacao-icone');
+    const btnCancelarConfirmacao = document.getElementById('confirmacao-cancelar');
+    const btnAceitarConfirmacao = document.getElementById('confirmacao-aceitar');
+
+    const tonsConfirmacao = {
+        perigo: {
+            icone: 'bg-red-500/15 text-red-300 ring-1 ring-inset ring-red-400/30',
+            botao: 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-500',
+        },
+        padrao: {
+            icone: 'bg-teal-500/15 text-teal-300 ring-1 ring-inset ring-teal-400/30',
+            botao: 'bg-teal-700 hover:bg-teal-800 focus-visible:ring-teal-600',
+        },
+    };
+
+    const classeIconeConfirmacao = 'mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-xl';
+    const classeBotaoConfirmacao = 'inline-flex w-full cursor-pointer items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 sm:w-auto';
+
+    let acaoConfirmada = null;
+
+    const fecharConfirmacao = () => {
+        acaoConfirmada = null;
+        dialogoConfirmacao.close();
+    };
+
+    const abrirConfirmacao = (gatilho, acao) => {
+        const tom = tonsConfirmacao[gatilho.dataset.confirmarTom] || tonsConfirmacao.perigo;
+
+        tituloConfirmacao.textContent = gatilho.dataset.confirmarTitulo || 'Confirmar ação';
+        mensagemConfirmacao.textContent = gatilho.dataset.confirmar || '';
+        btnAceitarConfirmacao.textContent = gatilho.dataset.confirmarAcao || 'Confirmar';
+        iconeConfirmacao.className = `${classeIconeConfirmacao} ${tom.icone}`;
+        btnAceitarConfirmacao.className = `${classeBotaoConfirmacao} ${tom.botao}`;
+
+        acaoConfirmada = acao;
+        dialogoConfirmacao.showModal();
+    };
+
+    btnCancelarConfirmacao.addEventListener('click', fecharConfirmacao);
+
+    // Esc fecha o diálogo nativamente; zera a ação pendente.
+    dialogoConfirmacao.addEventListener('cancel', () => {
+        acaoConfirmada = null;
+    });
+
+    dialogoConfirmacao.addEventListener('click', (e) => {
+        if (e.target === dialogoConfirmacao) fecharConfirmacao();
+    });
+
+    btnAceitarConfirmacao.addEventListener('click', () => {
+        const acao = acaoConfirmada;
+        fecharConfirmacao();
+        if (typeof acao === 'function') acao();
+    });
+
+    const enviarFormularioConfirmado = (form) => {
+        form.dataset.confirmacaoAceita = 'true';
+        if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+        } else {
+            form.submit();
+        }
+    };
+
+    document.querySelectorAll('form[data-confirmar]').forEach((form) => {
+        form.addEventListener('submit', (e) => {
+            if (form.dataset.confirmacaoAceita === 'true') {
+                delete form.dataset.confirmacaoAceita;
+                return;
+            }
+
+            e.preventDefault();
+            abrirConfirmacao(form, () => enviarFormularioConfirmado(form));
+        });
+    });
+
+    document.addEventListener('click', (e) => {
+        const gatilho = e.target.closest('a[data-confirmar]');
+        if (!gatilho) return;
+
+        e.preventDefault();
+        abrirConfirmacao(gatilho, () => {
+            window.location.href = gatilho.href;
+        });
     });
 }
 

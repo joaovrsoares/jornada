@@ -51,7 +51,7 @@
         <div class="flex flex-wrap items-center gap-3">
             <span class="inline-flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-emerald-400"></span>
-                <span>Jornada completa</span>
+                <span>Dia completo</span>
             </span>
             <span class="inline-flex items-center gap-1.5">
                 <span class="size-2 rounded-full bg-amber-400"></span>

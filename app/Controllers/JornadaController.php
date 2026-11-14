@@ -32,8 +32,7 @@ class JornadaController extends Controller
         $saldoMes = 0;
 
         foreach ($registros as &$r) {
-            $r['minutos_trabalhados'] = RegistrarController::calcularMinutos($r);
-            $r['saldo_minutos'] = RegistrarController::calcularSaldoDia($r, $cargaDiaria, $tolerancia);
+            $r = RegistrarController::enriquecerRegistro($r, $cargaDiaria, $tolerancia);
 
             $totalTrabalhadoMes += $r['minutos_trabalhados'];
             if ($r['saldo_minutos'] !== null) {
@@ -42,14 +41,58 @@ class JornadaController extends Controller
         }
         unset($r);
 
+        $hoje = date('Y-m-d');
+        $porData = [];
+        foreach ($registros as $r) {
+            $porData[(string) $r['data']] = $r;
+        }
+
+        // O espelho mostra o mês inteiro: dias lançados, dias úteis em aberto,
+        // fins de semana e dias que ainda vão chegar.
+        $dias = [];
+        $primeiroTs = strtotime($mes . '-01');
+        $ultimoDia = (int) date('t', $primeiroTs);
+
+        for ($d = 1; $d <= $ultimoDia; $d++) {
+            $data = sprintf('%s-%02d', $mes, $d);
+            $ts = strtotime($data);
+            $diaSemana = (int) date('w', $ts);
+            $registro = $porData[$data] ?? null;
+
+            if ($registro !== null) {
+                $estado = 'lancado';
+            } elseif ($diaSemana === 0 || $diaSemana === 6) {
+                $estado = 'fim_semana';
+            } elseif ($data > $hoje) {
+                $estado = 'futuro';
+            } else {
+                $estado = 'sem_lancamento';
+            }
+
+            $dias[] = [
+                'data' => $data,
+                'dia' => date('d/m', $ts),
+                'dia_semana' => RegistrarController::DIAS_SEMANA[$diaSemana],
+                'estado' => $estado,
+                'rotulo_estado' => match ($estado) {
+                    'futuro' => 'Ainda por vir',
+                    'fim_semana' => 'Fim de semana',
+                    default => 'Sem lançamento',
+                },
+                'registro' => $registro,
+                'eh_hoje' => $data === $hoje,
+            ];
+        }
+
         $this->view('jornada/index', [
-            'titulo' => 'Minha jornada',
+            'titulo' => 'Espelho do mês',
             'mes' => $mes,
             'cargaDiaria' => $cargaDiaria,
             'tolerancia' => $tolerancia,
             'totalTrabalhadoMes' => $totalTrabalhadoMes,
             'saldoMes' => $saldoMes,
             'registros' => $registros,
+            'dias' => $dias,
             'mapaCalendario' => RegistrarController::obterMapaCalendario(),
         ]);
     }

@@ -1,3 +1,9 @@
 @import "tailwindcss" source(none);
 @source "../../app";
 @source "../../public/assets/js";
+
+/* Impressão do relatório: paisagem para caber as 10 colunas. */
+@page {
+    size: A4 landscape;
+    margin: 10mm;
+}

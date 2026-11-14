@@ -29,8 +29,9 @@ class RelatoriosController extends Controller
 
         $out = fopen('php://output', 'w');
         fwrite($out, "\xEF\xBB\xBF");
+        $linha = static fn(array $row) => fputcsv($out, $row, ';', '"', '');
 
-        fputcsv($out, [
+        $linha([
             'Data',
             'Ocorrencia',
             'Entrada',
@@ -39,11 +40,9 @@ class RelatoriosController extends Controller
             'Saida',
             'Total Trabalhado',
             'Saldo do Dia',
-            'Comprovacao',
+            'Comprovante',
             'Observacao',
-        ], ';', '"', '');
-
-        $cortar = static fn(?string $h): string => $h ? substr($h, 0, 5) : '';
+        ]);
 
         foreach ($dados['registros'] as $r) {
             $saldoStr = $r['saldo_minutos'] === null
@@ -51,22 +50,22 @@ class RelatoriosController extends Controller
                 : RegistrarController::formatarMinutos($r['saldo_minutos'], true);
             $comp = RegistrarController::statusComprovacao($r);
 
-            fputcsv($out, [
+            $linha([
                 date('d/m/Y', strtotime((string) $r['data'])),
                 $r['tipo'],
-                $cortar($r['entrada'] ?? null),
-                $cortar($r['saida_intervalo'] ?? null),
-                $cortar($r['retorno_intervalo'] ?? null),
-                $cortar($r['saida'] ?? null),
+                RegistrarController::horaCurta($r['entrada'] ?? null),
+                RegistrarController::horaCurta($r['saida_intervalo'] ?? null),
+                RegistrarController::horaCurta($r['retorno_intervalo'] ?? null),
+                RegistrarController::horaCurta($r['saida'] ?? null),
                 RegistrarController::formatarMinutos($r['minutos_trabalhados']),
                 $saldoStr,
                 $comp['rotulo'],
                 $r['observacao'] ?? '',
-            ], ';', '"', '');
+            ]);
         }
 
-        fputcsv($out, [], ';', '"', '');
-        fputcsv($out, [
+        $linha([]);
+        $linha([
             'FECHAMENTO',
             count($dados['registros']) . ' dias',
             '',
@@ -77,7 +76,7 @@ class RelatoriosController extends Controller
             RegistrarController::formatarMinutos($dados['saldoLiquido'], true),
             '',
             '',
-        ], ';', '"', '');
+        ]);
 
         fclose($out);
         exit;
@@ -115,8 +114,7 @@ class RelatoriosController extends Controller
         ];
 
         foreach ($registros as &$r) {
-            $r['minutos_trabalhados'] = RegistrarController::calcularMinutos($r);
-            $r['saldo_minutos'] = RegistrarController::calcularSaldoDia($r, $cargaDiaria, $tolerancia);
+            $r = RegistrarController::enriquecerRegistro($r, $cargaDiaria, $tolerancia);
 
             $totalTrabalhado += $r['minutos_trabalhados'];
 
@@ -147,7 +145,6 @@ class RelatoriosController extends Controller
             'horasDebito' => $horasDebito,
             'saldoLiquido' => $saldoLiquido,
             'ocorrencias' => $ocorrencias,
-            'mapaCalendario' => RegistrarController::obterMapaCalendario(),
         ];
     }
 }

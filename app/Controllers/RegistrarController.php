@@ -33,12 +33,30 @@ class RegistrarController extends Controller
 
     public const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
+    public const DIAS_SEMANA_COMPLETOS = [
+        'Domingo',
+        'Segunda-feira',
+        'Terça-feira',
+        'Quarta-feira',
+        'Quinta-feira',
+        'Sexta-feira',
+        'Sábado',
+    ];
+
     public const CLASSES_TIPO = [
         'normal' => 'bg-stone-100 text-zinc-700 ring-1 ring-inset ring-stone-300/80',
         'atestado' => 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-600/20',
         'folga' => 'bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-600/20',
         'feriado' => 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20',
         'falta' => 'bg-red-50 text-red-800 ring-1 ring-inset ring-red-600/20',
+    ];
+
+    public const CLASSES_TIPO_ESCURO = [
+        'normal' => 'bg-zinc-800 text-zinc-300 ring-1 ring-inset ring-zinc-700',
+        'atestado' => 'bg-sky-500/15 text-sky-300 ring-1 ring-inset ring-sky-400/30',
+        'folga' => 'bg-teal-500/15 text-teal-300 ring-1 ring-inset ring-teal-400/30',
+        'feriado' => 'bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/30',
+        'falta' => 'bg-red-500/15 text-red-300 ring-1 ring-inset ring-red-400/30',
     ];
 
     public const CLASSES_COMPROVACAO = [
@@ -48,7 +66,50 @@ class RegistrarController extends Controller
         'isento' => 'bg-stone-100 text-zinc-500 ring-1 ring-inset ring-stone-300/70',
     ];
 
+    public const CLASSES_COMPROVACAO_ESCURO = [
+        'comprovado' => 'bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/30',
+        'parcial' => 'bg-teal-500/15 text-teal-300 ring-1 ring-inset ring-teal-400/30',
+        'pendente' => 'bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-400/30',
+        'isento' => 'bg-zinc-800 text-zinc-400 ring-1 ring-inset ring-zinc-700',
+    ];
+
+    public const TIPOS_OCORRENCIA = ['atestado', 'feriado', 'folga'];
+
+    /**
+     * Ocorrências que podem ser lançadas direto no /registrar, sem horários.
+     */
+    public const TIPOS_LANCAMENTO = ['falta', 'folga', 'feriado', 'atestado'];
+
+    public const REGISTRO_VAZIO = [
+        'tipo' => 'normal',
+        'entrada' => null,
+        'saida_intervalo' => null,
+        'retorno_intervalo' => null,
+        'saida' => null,
+        'foto_entrada' => null,
+        'foto_saida_intervalo' => null,
+        'foto_retorno_intervalo' => null,
+        'foto_saida' => null,
+        'observacao' => null,
+    ];
+
     public function index(): void
+    {
+        // A edição do dia inteiro pertence ao Espelho do mês.
+        if (($_GET['modo'] ?? '') === 'completo') {
+            $data = (string) ($_GET['data'] ?? '');
+            $this->redirect('/jornada/editar' . (self::dataValida($data) ? '?data=' . urlencode($data) : ''));
+        }
+
+        $this->renderizarFormulario('individual');
+    }
+
+    public function editarDia(): void
+    {
+        $this->renderizarFormulario('completo');
+    }
+
+    private function renderizarFormulario(string $modo): void
     {
         $pdo = Database::connection();
         $hoje = date('Y-m-d');
@@ -59,8 +120,6 @@ class RegistrarController extends Controller
             $dataAlvo = $hoje;
         }
 
-        $modo = ($_GET['modo'] ?? 'individual') === 'completo' ? 'completo' : 'individual';
-
         $usuario = ConfiguracoesController::obterUsuario();
         $cargaDiaria = $usuario['carga_diaria_minutos'];
         $tolerancia = $usuario['tolerancia_minutos'];
@@ -69,31 +128,14 @@ class RegistrarController extends Controller
             'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
         );
         $stmtDia->execute(['data' => $dataAlvo]);
-        $registroAtual = $stmtDia->fetch() ?: [
-            'data' => $dataAlvo,
-            'tipo' => 'normal',
-            'entrada' => null,
-            'saida_intervalo' => null,
-            'retorno_intervalo' => null,
-            'saida' => null,
-            'foto_entrada' => null,
-            'foto_saida_intervalo' => null,
-            'foto_retorno_intervalo' => null,
-            'foto_saida' => null,
-            'observacao' => null,
-        ];
+        $registroAtual = $stmtDia->fetch() ?: self::REGISTRO_VAZIO + ['data' => $dataAlvo];
 
-        $proximaBatida = null;
-        foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
-            if (empty($registroAtual[$campo])) {
-                $proximaBatida = $campo;
-                break;
-            }
-        }
+        $proximaBatida = self::proximaBatida($registroAtual);
 
         $mesAlvo = substr($dataAlvo, 0, 7);
         $todosRegistros = $pdo->query(
-            'SELECT * FROM registros_ponto WHERE usuario_id = 1'
+            'SELECT data, tipo, entrada, saida_intervalo, retorno_intervalo, saida
+             FROM registros_ponto WHERE usuario_id = 1'
         )->fetchAll();
 
         $saldoAnteriorMes = 0;
@@ -110,7 +152,9 @@ class RegistrarController extends Controller
         $assistente = self::calcularAssistenteDia($registroAtual, $cargaDiaria, $saldoAnteriorMes);
 
         $this->view('registrar/index', [
-            'titulo' => 'Registrar',
+            'titulo' => $modo === 'completo'
+                ? 'Editando dia ' . date('d/m/Y', strtotime($dataAlvo))
+                : 'Registrar ponto',
             'hoje' => $hoje,
             'agora' => $agora,
             'modo' => $modo,
@@ -124,38 +168,40 @@ class RegistrarController extends Controller
 
     public function salvar(): void
     {
+        $this->salvarRegistro('individual');
+    }
+
+    public function salvarDia(): void
+    {
+        $this->salvarRegistro('completo');
+    }
+
+    private function salvarRegistro(string $modo): void
+    {
         $pdo = Database::connection();
         $data = (string) ($_POST['data'] ?? date('Y-m-d'));
         if (!self::dataValida($data)) {
             $data = date('Y-m-d');
         }
-        $modo = ($_POST['modo'] ?? 'individual') === 'completo' ? 'completo' : 'individual';
+
+        $urlVoltar = $modo === 'completo'
+            ? '/jornada/editar?data=' . urlencode($data)
+            : '/registrar?data=' . urlencode($data);
 
         $stmtDia = $pdo->prepare(
             'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
         );
         $stmtDia->execute(['data' => $data]);
-        $existente = $stmtDia->fetch() ?: [
-            'tipo' => 'normal',
-            'entrada' => null,
-            'saida_intervalo' => null,
-            'retorno_intervalo' => null,
-            'saida' => null,
-            'foto_entrada' => null,
-            'foto_saida_intervalo' => null,
-            'foto_retorno_intervalo' => null,
-            'foto_saida' => null,
-            'observacao' => null,
-        ];
+        $existente = $stmtDia->fetch() ?: self::REGISTRO_VAZIO;
 
-        $limparHora = static fn(?string $v): ?string => ($v !== null && trim($v) !== '') ? substr(trim($v), 0, 5) : null;
+        $limparHora = static fn(?string $v): ?string => $v === null ? null : (self::horaCurta(trim($v)) ?: null);
 
         $candidato = [
             'tipo' => $existente['tipo'] ?? 'normal',
-            'entrada' => $existente['entrada'] ? substr((string) $existente['entrada'], 0, 5) : null,
-            'saida_intervalo' => $existente['saida_intervalo'] ? substr((string) $existente['saida_intervalo'], 0, 5) : null,
-            'retorno_intervalo' => $existente['retorno_intervalo'] ? substr((string) $existente['retorno_intervalo'], 0, 5) : null,
-            'saida' => $existente['saida'] ? substr((string) $existente['saida'], 0, 5) : null,
+            'entrada' => self::horaCurta($existente['entrada']) ?: null,
+            'saida_intervalo' => self::horaCurta($existente['saida_intervalo']) ?: null,
+            'retorno_intervalo' => self::horaCurta($existente['retorno_intervalo']) ?: null,
+            'saida' => self::horaCurta($existente['saida']) ?: null,
             'foto_entrada' => $existente['foto_entrada'] ?? null,
             'foto_saida_intervalo' => $existente['foto_saida_intervalo'] ?? null,
             'foto_retorno_intervalo' => $existente['foto_retorno_intervalo'] ?? null,
@@ -164,18 +210,26 @@ class RegistrarController extends Controller
         ];
 
         if ($modo === 'individual') {
+            $tipoExistente = (string) ($existente['tipo'] ?? 'normal');
+            if ($tipoExistente !== 'normal') {
+                $rotuloTipo = self::ROTULOS_TIPO[$tipoExistente] ?? $tipoExistente;
+                $this->redirect($urlVoltar, [
+                    'erro' => "Este dia está marcado como {$rotuloTipo}. Reverta a ocorrência para registrar horários, ou edite o dia completo no Espelho do mês.",
+                ]);
+            }
+
             $campo = $_POST['campo'] ?? '';
             if (!array_key_exists($campo, self::CAMPOS_BATIDA)) {
-                $this->redirect("/registrar?modo=individual&data={$data}", [
+                $this->redirect($urlVoltar, [
                     'erro' => 'Selecione uma etapa válida da jornada.',
                 ]);
             }
 
             if (!empty($existente[$campo])) {
                 $rotulo = self::CAMPOS_BATIDA[$campo];
-                $horaExistente = substr((string) $existente[$campo], 0, 5);
-                $this->redirect("/registrar?modo=individual&data={$data}", [
-                    'erro' => "{$rotulo} já foi registrada às {$horaExistente} neste dia. Para corrigir um horário já lançado, use Minha jornada.",
+                $horaExistente = self::horaCurta($existente[$campo]);
+                $this->redirect($urlVoltar, [
+                    'erro' => "{$rotulo} já foi registrada às {$horaExistente} neste dia. Para corrigir um horário já lançado, use o Espelho do mês.",
                 ]);
             }
 
@@ -184,13 +238,13 @@ class RegistrarController extends Controller
 
             $erro = self::validarBatidas($candidato);
             if ($erro !== null) {
-                $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erro]);
+                $this->redirect($urlVoltar, ['erro' => $erro]);
             }
 
             if (!empty($_FILES['foto']) && ($_FILES['foto']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                 [$caminhoFoto, $erroFoto] = $this->processarUploadFoto($_FILES['foto'], $data, $campo, $candidato['foto_' . $campo]);
                 if ($erroFoto !== null) {
-                    $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erroFoto]);
+                    $this->redirect($urlVoltar, ['erro' => $erroFoto]);
                 }
                 $candidato['foto_' . $campo] = $caminhoFoto;
             }
@@ -209,7 +263,7 @@ class RegistrarController extends Controller
 
             $erro = self::validarBatidas($candidato);
             if ($erro !== null) {
-                $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erro]);
+                $this->redirect($urlVoltar, ['erro' => $erro]);
             }
 
             foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
@@ -225,14 +279,14 @@ class RegistrarController extends Controller
                 if (!empty($_FILES[$inputKey]) && ($_FILES[$inputKey]['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     if ($candidato[$campo] === null) {
                         $rotulo = self::CAMPOS_BATIDA[$campo];
-                        $this->redirect("/registrar?modo={$modo}&data={$data}", [
+                        $this->redirect($urlVoltar, [
                             'erro' => "Preencha o horário de {$rotulo} para anexar o comprovante.",
                         ]);
                     }
 
                     [$caminhoFoto, $erroFoto] = $this->processarUploadFoto($_FILES[$inputKey], $data, $campo, $candidato[$colFoto]);
                     if ($erroFoto !== null) {
-                        $this->redirect("/registrar?modo={$modo}&data={$data}", ['erro' => $erroFoto]);
+                        $this->redirect($urlVoltar, ['erro' => $erroFoto]);
                     }
                     $candidato[$colFoto] = $caminhoFoto;
                 }
@@ -273,7 +327,92 @@ class RegistrarController extends Controller
             'observacao' => $candidato['observacao'],
         ]);
 
-        $this->redirect("/registrar?modo={$modo}&data={$data}", ['salvo' => true]);
+        $this->redirect($urlVoltar, ['salvo' => true]);
+    }
+
+    /**
+     * Lança uma ocorrência (falta, folga, feriado ou atestado) direto no
+     * /registrar, sem exigir horários. Também reverte um dia para normal.
+     */
+    public function salvarOcorrencia(): void
+    {
+        $pdo = Database::connection();
+        $data = (string) ($_POST['data'] ?? date('Y-m-d'));
+        if (!self::dataValida($data)) {
+            $data = date('Y-m-d');
+        }
+
+        $urlVoltar = '/registrar?data=' . urlencode($data);
+        $tipo = (string) ($_POST['tipo'] ?? '');
+
+        $stmtDia = $pdo->prepare(
+            'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
+        );
+        $stmtDia->execute(['data' => $data]);
+        $existente = $stmtDia->fetch();
+
+        if ($tipo === 'normal') {
+            if ($existente === false) {
+                $this->redirect($urlVoltar);
+            }
+
+            $pdo->prepare(
+                'UPDATE registros_ponto SET tipo = :tipo WHERE usuario_id = 1 AND data = :data'
+            )->execute(['tipo' => 'normal', 'data' => $data]);
+
+            $this->redirect($urlVoltar, [
+                'ocorrencia' => 'Ocorrência removida. ' . date('d/m/Y', strtotime($data)) . ' voltou a ser um dia normal.',
+            ]);
+        }
+
+        if (!in_array($tipo, self::TIPOS_LANCAMENTO, true)) {
+            $this->redirect($urlVoltar, ['erro' => 'Selecione o tipo de ocorrência que deseja lançar.']);
+        }
+
+        // Uma ocorrência é um dia sem batidas: os horários e comprovantes que
+        // porventura existam são removidos para não ficarem horários fantasmas.
+        $fotosAnteriores = [];
+        $tinhaHorario = false;
+        if ($existente !== false) {
+            foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
+                $tinhaHorario = $tinhaHorario || !empty($existente[$campo]);
+                $fotosAnteriores[] = $existente['foto_' . $campo] ?? null;
+            }
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO registros_ponto
+                (usuario_id, data, tipo, entrada, saida_intervalo, retorno_intervalo, saida,
+                 foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida, observacao)
+             VALUES
+                (1, :data, :tipo, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, :observacao)
+             ON DUPLICATE KEY UPDATE
+                tipo = VALUES(tipo),
+                entrada = NULL,
+                saida_intervalo = NULL,
+                retorno_intervalo = NULL,
+                saida = NULL,
+                foto_entrada = NULL,
+                foto_saida_intervalo = NULL,
+                foto_retorno_intervalo = NULL,
+                foto_saida = NULL,
+                observacao = VALUES(observacao)'
+        );
+
+        $stmt->execute([
+            'data' => $data,
+            'tipo' => $tipo,
+            'observacao' => $existente['observacao'] ?? null,
+        ]);
+
+        foreach ($fotosAnteriores as $foto) {
+            $this->removerArquivoFoto($foto);
+        }
+
+        $this->redirect($urlVoltar, [
+            'ocorrencia' => 'Ocorrência registrada: ' . self::ROTULOS_TIPO[$tipo] . ' em ' . date('d/m/Y', strtotime($data)) . '.'
+                . ($tinhaHorario ? ' Os horários anteriores foram removidos.' : ''),
+        ]);
     }
 
     public function removerFoto(): void
@@ -281,7 +420,7 @@ class RegistrarController extends Controller
         $data = (string) ($_POST['data'] ?? '');
         $campo = (string) ($_POST['remover_foto'] ?? '');
         $dataSegura = self::dataValida($data) ? $data : date('Y-m-d');
-        $voltar = '/registrar?modo=completo&data=' . urlencode($dataSegura);
+        $voltar = '/jornada/editar?data=' . urlencode($dataSegura);
 
         if (!self::dataValida($data) || !array_key_exists($campo, self::CAMPOS_BATIDA)) {
             $this->redirect($voltar, ['erro' => 'Não foi possível identificar o comprovante a remover.']);
@@ -289,18 +428,13 @@ class RegistrarController extends Controller
 
         $pdo = Database::connection();
         $colFoto = 'foto_' . $campo;
+        $relativo = $this->fotoRelativa($data, $campo);
 
-        $stmt = $pdo->prepare(
-            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = 1 AND data = :data"
-        );
-        $stmt->execute(['data' => $data]);
-        $relativo = $stmt->fetchColumn();
-
-        if (!$relativo) {
+        if ($relativo === null) {
             $this->redirect($voltar, ['erro' => 'Este comprovante já não está anexado ao registro.']);
         }
 
-        $this->removerArquivoFoto((string) $relativo);
+        $this->removerArquivoFoto($relativo);
 
         $stmtAtualiza = $pdo->prepare(
             "UPDATE registros_ponto SET {$colFoto} = NULL WHERE usuario_id = 1 AND data = :data"
@@ -316,21 +450,14 @@ class RegistrarController extends Controller
         $campo = (string) ($_GET['campo'] ?? '');
 
         if (!self::dataValida($data) || !array_key_exists($campo, self::CAMPOS_BATIDA)) {
-            http_response_code(404);
-            echo 'Comprovante não encontrado.';
+            $this->naoEncontrado('Comprovante não encontrado.');
             return;
         }
 
-        $colFoto = 'foto_' . $campo;
-        $stmt = Database::connection()->prepare(
-            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = 1 AND data = :data"
-        );
-        $stmt->execute(['data' => $data]);
-        $relativo = $stmt->fetchColumn();
+        $relativo = $this->fotoRelativa($data, $campo);
 
-        if (!$relativo) {
-            http_response_code(404);
-            echo 'Comprovante não encontrado.';
+        if ($relativo === null) {
+            $this->naoEncontrado('Comprovante não encontrado.');
             return;
         }
 
@@ -338,8 +465,7 @@ class RegistrarController extends Controller
         $caminhoAbsoluto = $baseDir ? realpath($baseDir . '/' . $relativo) : false;
 
         if (!$baseDir || !$caminhoAbsoluto || !str_starts_with($caminhoAbsoluto, $baseDir) || !is_file($caminhoAbsoluto)) {
-            http_response_code(404);
-            echo 'Arquivo de comprovante não encontrado.';
+            $this->naoEncontrado('Arquivo de comprovante não encontrado.');
             return;
         }
 
@@ -387,6 +513,24 @@ class RegistrarController extends Controller
         }
 
         $this->redirect("/jornada?mes={$mes}", ['salvo' => true]);
+    }
+
+    private function fotoRelativa(string $data, string $campo): ?string
+    {
+        $colFoto = 'foto_' . $campo;
+        $stmt = Database::connection()->prepare(
+            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = 1 AND data = :data"
+        );
+        $stmt->execute(['data' => $data]);
+        $relativo = $stmt->fetchColumn();
+
+        return $relativo ? (string) $relativo : null;
+    }
+
+    private function naoEncontrado(string $mensagem): void
+    {
+        http_response_code(404);
+        echo $mensagem;
     }
 
     /**
@@ -457,6 +601,17 @@ class RegistrarController extends Controller
         }
     }
 
+    public static function proximaBatida(array $registro): ?string
+    {
+        foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
+            if (empty($registro[$campo])) {
+                return $campo;
+            }
+        }
+
+        return null;
+    }
+
     public static function statusComprovacao(array $r): array
     {
         $batidas = 0;
@@ -472,35 +627,39 @@ class RegistrarController extends Controller
         }
 
         if ($batidas === 0) {
-            return ['batidas' => 0, 'fotos' => 0, 'status' => 'isento', 'rotulo' => '—', 'rotulo_curto' => '—'];
+            return ['batidas' => 0, 'fotos' => 0, 'status' => 'isento', 'rotulo' => '—'];
         }
 
-        if ($fotos === $batidas) {
-            return [
-                'batidas' => $batidas,
-                'fotos' => $fotos,
-                'status' => 'comprovado',
-                'rotulo' => 'Comprovado',
-                'rotulo_curto' => "Fotos {$fotos}/{$batidas}",
-            ];
-        }
+        return [
+            'batidas' => $batidas,
+            'fotos' => $fotos,
+            'status' => $fotos === $batidas ? 'comprovado' : ($fotos > 0 ? 'parcial' : 'pendente'),
+            'rotulo' => $fotos > 0 ? "Fotos {$fotos}/{$batidas}" : 'Sem foto',
+        ];
+    }
 
-        if ($fotos > 0) {
-            return [
-                'batidas' => $batidas,
-                'fotos' => $fotos,
-                'status' => 'parcial',
-                'rotulo' => "Parcial ({$fotos}/{$batidas})",
-                'rotulo_curto' => "Fotos {$fotos}/{$batidas}",
-            ];
-        }
+    public static function enriquecerRegistro(array $r, int $cargaDiariaMinutos, int $toleranciaMinutos): array
+    {
+        $comp = self::statusComprovacao($r);
+        $tipo = (string) ($r['tipo'] ?? 'normal');
 
-        return ['batidas' => $batidas, 'fotos' => 0, 'status' => 'pendente', 'rotulo' => 'Sem foto', 'rotulo_curto' => 'Sem foto'];
+        $r['minutos_trabalhados'] = self::calcularMinutos($r);
+        $r['saldo_minutos'] = self::calcularSaldoDia($r, $cargaDiariaMinutos, $toleranciaMinutos);
+        $r['classe_saldo'] = self::classeBadgeSaldo($r['saldo_minutos']);
+        $r['classe_comprovacao'] = self::CLASSES_COMPROVACAO[$comp['status']];
+        $r['classe_tipo'] = self::CLASSES_TIPO[$tipo] ?? self::CLASSES_TIPO['normal'];
+        $r['rotulo_tipo'] = self::ROTULOS_TIPO[$tipo] ?? $tipo;
+        $r['rotulo_comprovacao'] = $comp['rotulo'];
+        $r['texto_comprovacao'] = $comp['batidas'] === 0
+            ? 'Nenhuma batida registrada'
+            : "{$comp['fotos']} de {$comp['batidas']} batidas com foto do comprovante";
+
+        return $r;
     }
 
     public static function renderizarCelulaBatida(array $item, string $campo): string
     {
-        $valor = !empty($item[$campo]) ? substr((string) $item[$campo], 0, 5) : '';
+        $valor = self::horaCurta($item[$campo] ?? null);
         if ($valor === '') {
             return '—';
         }
@@ -516,11 +675,52 @@ class RegistrarController extends Controller
         $titulo = "{$rotulo} — {$dataBr} às {$valor}";
 
         return sprintf(
-            '<button type="button" class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-emerald-200/80 bg-emerald-50/70 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-emerald-900 transition-colors hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600" data-comprovante-url="%s" data-comprovante-titulo="%s" title="Ver ticket de %s">%s <span class="text-[10px] font-bold text-emerald-600" aria-hidden="true">✓</span></button>',
+            '<button type="button" class="group -m-2 inline-flex cursor-pointer items-center rounded-lg p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600" data-comprovante-url="%s" data-comprovante-titulo="%s" title="Ver comprovante de %s">'
+            . '<span class="inline-flex items-center gap-1 rounded-md border border-emerald-200/80 bg-emerald-50/70 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-emerald-900 transition-colors group-hover:border-emerald-300 group-hover:bg-emerald-100">%s <span class="text-[10px] font-bold text-emerald-600" aria-hidden="true">✓</span></span>'
+            . '</button>',
             htmlspecialchars($url),
             htmlspecialchars($titulo),
             htmlspecialchars(strtolower($rotulo)),
             htmlspecialchars($valor)
+        );
+    }
+
+    public static function icone(string $nome, string $classe = 'size-4', array $atributos = []): string
+    {
+        $icones = [
+            'editar' => ['0 0 24 24', '<path d="M21 20.9998H13M2.5 21.4998L8.04927 19.3655C8.40421 19.229 8.58168 19.1607 8.74772 19.0716C8.8952 18.9924 9.0358 18.901 9.16804 18.7984C9.31692 18.6829 9.45137 18.5484 9.72028 18.2795L21 6.99982C22.1046 5.89525 22.1046 4.10438 21 2.99981C19.8955 1.89525 18.1046 1.89524 17 2.99981L5.72028 14.2795C5.45138 14.5484 5.31692 14.6829 5.20139 14.8318C5.09877 14.964 5.0074 15.1046 4.92823 15.2521C4.83911 15.4181 4.77085 15.5956 4.63433 15.9506L2.5 21.4998ZM2.5 21.4998L4.55812 16.1488C4.7054 15.7659 4.77903 15.5744 4.90534 15.4867C5.01572 15.4101 5.1523 15.3811 5.2843 15.4063C5.43533 15.4351 5.58038 15.5802 5.87048 15.8703L8.12957 18.1294C8.41967 18.4195 8.56472 18.5645 8.59356 18.7155C8.61877 18.8475 8.58979 18.9841 8.51314 19.0945C8.42545 19.2208 8.23399 19.2944 7.85107 19.4417L2.5 21.4998Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'],
+            'excluir' => ['0 0 24 24', '<path d="M16 6V5.2C16 4.0799 16 3.51984 15.782 3.09202C15.5903 2.71569 15.2843 2.40973 14.908 2.21799C14.4802 2 13.9201 2 12.8 2H11.2C10.0799 2 9.51984 2 9.09202 2.21799C8.71569 2.40973 8.40973 2.71569 8.21799 3.09202C8 3.51984 8 4.0799 8 5.2V6M10 11.5V16.5M14 11.5V16.5M3 6H21M19 6V17.2C19 18.8802 19 19.7202 18.673 20.362C18.3854 20.9265 17.9265 21.3854 17.362 21.673C16.7202 22 15.8802 22 14.2 22H9.8C8.11984 22 7.27976 22 6.63803 21.673C6.07354 21.3854 5.6146 20.9265 5.32698 20.362C5 19.7202 5 18.8802 5 17.2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'],
+            'calendario' => ['0 0 20 20', '<path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z" clip-rule="evenodd" />'],
+            'chevron' => ['0 0 20 20', '<path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />'],
+            'camera' => ['0 0 20 20', '<path fill-rule="evenodd" d="M1 8a2 2 0 0 1 2-2h.93a2 2 0 0 0 1.664-.89l.812-1.22A2 2 0 0 1 8.07 3h3.86a2 2 0 0 1 1.664.89l.812 1.22A2 2 0 0 0 16.07 6H17a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8Zm13.5 3a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd" />'],
+            'ajustes' => ['0 0 20 20', '<path fill-rule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd" />'],
+        ];
+
+        [$viewBox, $conteudo] = $icones[$nome] ?? ['0 0 20 20', ''];
+        $preenchimento = $viewBox === '0 0 24 24' ? 'fill="none"' : 'fill="currentColor"';
+
+        $extras = '';
+        foreach ($atributos as $atributo => $valor) {
+            $extras .= ' ' . $atributo . '="' . $valor . '"';
+        }
+
+        return '<svg class="' . $classe . '"' . $extras . ' viewBox="' . $viewBox . '" ' . $preenchimento . ' aria-hidden="true">' . $conteudo . '</svg>';
+    }
+
+    public static function horaCurta(?string $hora): string
+    {
+        return $hora ? substr($hora, 0, 5) : '';
+    }
+
+    /**
+     * @param array<string, string> $mapa
+     */
+    public static function jsonMapaCalendario(array $mapa): string
+    {
+        return htmlspecialchars(
+            json_encode($mapa, JSON_UNESCAPED_UNICODE) ?: '{}',
+            ENT_QUOTES,
+            'UTF-8'
         );
     }
 
@@ -540,6 +740,15 @@ class RegistrarController extends Controller
         }
 
         return checkdate((int) $m[2], 1, (int) $m[1]);
+    }
+
+    /**
+     * Sábados e domingos são a única folga semanal considerada pelo sistema,
+     * então a sexta-feira é sempre o último dia útil da semana.
+     */
+    public static function ehUltimoDiaUtilDaSemana(string $data): bool
+    {
+        return (int) date('N', strtotime($data)) === 5;
     }
 
     public static function deslocarMes(string $anoMes, int $deltaMeses): string
@@ -578,7 +787,7 @@ class RegistrarController extends Controller
             return 'falta';
         }
 
-        if (in_array($tipo, ['folga', 'feriado', 'atestado'], true)) {
+        if (in_array($tipo, self::TIPOS_OCORRENCIA, true)) {
             return 'ocorrencia';
         }
 
@@ -639,7 +848,7 @@ class RegistrarController extends Controller
             if ($min !== null) {
                 $sequencia[] = [
                     'rotulo' => $rotulo,
-                    'hora' => substr((string) $d[$campo], 0, 5),
+                    'hora' => self::horaCurta($d[$campo]),
                     'min' => $min,
                 ];
             }
@@ -676,8 +885,6 @@ class RegistrarController extends Controller
             return $vazio;
         }
 
-        $paraHora = static fn(int $min): string => sprintf('%02d:%02d', intdiv($min, 60) % 24, $min % 60);
-
         $e1 = self::paraMinutos($r['entrada'] ?? null);
         $s1 = self::paraMinutos($r['saida_intervalo'] ?? null);
         $e2 = self::paraMinutos($r['retorno_intervalo'] ?? null);
@@ -697,9 +904,9 @@ class RegistrarController extends Controller
                 $notaIntervalo = 'em intervalo — estimando 1h de pausa';
             } else {
                 $saidaPrevistaMin = $e1 + $cargaDiariaMinutos + 60;
-                $notaIntervalo = 'estimando 1h de intervalo (ou ' . $paraHora($e1 + $cargaDiariaMinutos) . ' direto)';
+                $notaIntervalo = 'estimando 1h de intervalo (ou ' . self::formatarHora($e1 + $cargaDiariaMinutos) . ' direto)';
             }
-            $saidaPrevista = $paraHora($saidaPrevistaMin);
+            $saidaPrevista = self::formatarHora($saidaPrevistaMin);
         }
 
         $compensacao = null;
@@ -710,19 +917,19 @@ class RegistrarController extends Controller
 
             if ($debito <= 20 || $diasUteisRestantes <= 1) {
                 $minutosHoje = min($debito, 120);
-                $diasNecessarios = 1;
             } else {
-                $porDia = (int) ceil($debito / $diasUteisRestantes);
-                $minutosHoje = min($debito, max(15, min(120, $porDia)));
-                $diasNecessarios = (int) ceil($debito / $minutosHoje);
+                // Espalha o débito igualmente pelos dias úteis que ainda restam
+                // no mês (sem piso artificial, para não encurtar o prazo).
+                $minutosHoje = min(120, (int) ceil($debito / $diasUteisRestantes));
             }
+            $diasNecessarios = (int) ceil($debito / $minutosHoje);
 
             $compensacao = [
                 'debito_total' => self::formatarMinutos($debito),
                 'minutos_por_dia' => $minutosHoje,
                 'dias_necessarios' => $diasNecessarios,
                 'dias_uteis_restantes' => $diasUteisRestantes,
-                'saida_com_compensacao' => $saidaPrevistaMin !== null ? $paraHora($saidaPrevistaMin + $minutosHoje) : null,
+                'saida_com_compensacao' => $saidaPrevistaMin !== null ? self::formatarHora($saidaPrevistaMin + $minutosHoje) : null,
             ];
         }
 
@@ -733,22 +940,25 @@ class RegistrarController extends Controller
         ];
     }
 
+    /**
+     * Dias úteis que ainda restam no mês depois da data de referência. A
+     * própria data não entra na conta: a compensação começa no dia seguinte.
+     */
     private static function contarDiasUteisRestantes(string $dataIso): int
     {
         $ts = strtotime($dataIso);
         $ultimoDia = (int) date('t', $ts);
-        $diaAtual = (int) date('j', $ts);
         $anoMes = date('Y-m-', $ts);
 
         $uteis = 0;
-        for ($d = $diaAtual; $d <= $ultimoDia; $d++) {
+        for ($d = (int) date('j', $ts) + 1; $d <= $ultimoDia; $d++) {
             $sem = (int) date('w', strtotime($anoMes . sprintf('%02d', $d)));
             if ($sem >= 1 && $sem <= 5) {
                 $uteis++;
             }
         }
 
-        return max(1, $uteis);
+        return $uteis;
     }
 
     public static function calcularMinutos(array $r): int
@@ -778,7 +988,7 @@ class RegistrarController extends Controller
         $tipo = $r['tipo'] ?? 'normal';
         $trabalhado = self::calcularMinutos($r);
 
-        if (in_array($tipo, ['atestado', 'feriado', 'folga'], true)) {
+        if (in_array($tipo, self::TIPOS_OCORRENCIA, true)) {
             return $trabalhado;
         }
 
@@ -801,6 +1011,11 @@ class RegistrarController extends Controller
         }
 
         return $diferenca;
+    }
+
+    public static function formatarHora(int $minutos): string
+    {
+        return sprintf('%02d:%02d', intdiv($minutos, 60) % 24, $minutos % 60);
     }
 
     public static function formatarMinutos(int $minutos, bool $exibirSinal = false): string
@@ -832,6 +1047,6 @@ class RegistrarController extends Controller
         if ($saldo < 0) {
             return 'bg-red-50 text-red-800 ring-1 ring-inset ring-red-600/20';
         }
-        return 'bg-stone-100 text-zinc-700 ring-1 ring-inset ring-stone-300/80';
+        return self::CLASSES_TIPO['normal'];
     }
 }

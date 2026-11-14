@@ -25,25 +25,12 @@ class Database {
             self::$connection = new PDO(
                 $dsn,
                 $config['username'],
-                $config['password']
-            );
-
-            # Configura o PDO para lançar exceções em caso de erro
-            self::$connection->setAttribute(
-                PDO::ATTR_ERRMODE,
-                PDO::ERRMODE_EXCEPTION
-            );
-
-            # Configura o PDO para retornar resultados como arrays associativos
-            self::$connection->setAttribute(
-                PDO::ATTR_DEFAULT_FETCH_MODE,
-                PDO::FETCH_ASSOC
-            );
-
-            # Configura o PDO para não emular prepared statements, garantindo que os parâmetros sejam tratados corretamente pelo banco de dados
-            self::$connection->setAttribute(
-                PDO::ATTR_EMULATE_PREPARES,
-                false
+                $config['password'],
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                ]
             );
         }
 

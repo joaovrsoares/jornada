@@ -31,10 +31,11 @@ class ConfiguracoesController extends Controller
         $minutos = $usuario['carga_diaria_minutos'];
 
         $this->view('configuracoes/index', [
-            'titulo' => 'Configurações',
+            'titulo' => 'Ajustes',
             'nome' => $usuario['nome'],
-            'cargaHoraria' => sprintf('%02d:%02d', intdiv($minutos, 60), $minutos % 60),
+            'cargaHoraria' => RegistrarController::formatarHora($minutos),
             'tolerancia' => $usuario['tolerancia_minutos'],
+            'versao' => 'dev',
         ]);
     }
 
