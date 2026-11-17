@@ -489,20 +489,23 @@ class RegistrarController extends Controller
     public function excluir(): void
     {
         $id = (int) ($_POST['id'] ?? 0);
-        $mes = $_POST['mes'] ?? date('Y-m');
+        $mes = is_string($_POST['mes'] ?? null) ? $_POST['mes'] : date('Y-m');
+        if (preg_match('/^\d{4}-\d{2}$/', $mes) !== 1) {
+            $mes = date('Y-m');
+        }
 
         if ($id > 0) {
             $pdo = Database::connection();
             $stmtBusca = $pdo->prepare(
-                'SELECT foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida
+                'SELECT data, foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida
                  FROM registros_ponto WHERE id = :id AND usuario_id = 1'
             );
             $stmtBusca->execute(['id' => $id]);
             $reg = $stmtBusca->fetch();
 
             if ($reg) {
-                foreach ($reg as $foto) {
-                    $this->removerArquivoFoto($foto);
+                foreach (array_keys(self::CAMPOS_BATIDA) as $campo) {
+                    $this->removerArquivoFoto($reg['foto_' . $campo] ?? null);
                 }
             }
 
@@ -510,6 +513,13 @@ class RegistrarController extends Controller
                 'DELETE FROM registros_ponto WHERE id = :id AND usuario_id = 1'
             );
             $stmt->execute(['id' => $id]);
+
+            if ($reg) {
+                $this->redirect(
+                    "/jornada?mes={$mes}",
+                    ['excluido' => 'Registro de ' . date('d/m/Y', strtotime((string) $reg['data'])) . ' excluído, junto com os comprovantes anexados.']
+                );
+            }
         }
 
         $this->redirect("/jornada?mes={$mes}", ['salvo' => true]);

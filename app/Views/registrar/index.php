@@ -493,13 +493,41 @@ foreach (array_keys($camposBatida) as $campoDia) {
                         </label>
                     </div>
 
-                    <button
-                        type="submit"
-                        class="inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white shadow-xs transition-colors hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 sm:w-auto disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        Salvar dia
-                    </button>
+                    <div class="flex flex-col gap-3 border-t border-stone-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                        <button
+                            type="submit"
+                            class="inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-teal-700 px-5 py-3 text-sm font-bold text-white shadow-xs transition-colors hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 sm:w-auto disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            Salvar dia
+                        </button>
+
+                        <?php if (!empty($registroAtual['id'])): ?>
+                            <button
+                                type="submit"
+                                form="form-excluir-dia"
+                                class="inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 shadow-2xs transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 sm:w-auto"
+                            >
+                                <?= RegistrarController::icone('excluir', 'size-4') ?>
+                                Excluir dia
+                            </button>
+                        <?php endif; ?>
+                    </div>
                 </form>
+
+                <?php if (!empty($registroAtual['id'])): ?>
+                    <form
+                        id="form-excluir-dia"
+                        method="post"
+                        action="/registrar/excluir"
+                        class="hidden"
+                        data-confirmar="O registro de <?= date('d/m/Y', $tsAlvo) ?> será excluído permanentemente, junto com os comprovantes anexados."
+                        data-confirmar-titulo="Excluir registro?"
+                        data-confirmar-acao="Excluir"
+                    >
+                        <input type="hidden" name="id" value="<?= (int) $registroAtual['id'] ?>">
+                        <input type="hidden" name="mes" value="<?= htmlspecialchars(substr($registroAtual['data'], 0, 7)) ?>">
+                    </form>
+                <?php endif; ?>
 
                 <?php foreach (array_keys($camposBatida) as $campoRemover): ?>
                     <form

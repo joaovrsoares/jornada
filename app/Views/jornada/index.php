@@ -10,7 +10,11 @@ $mesDeHoje = date('Y-m');
 $jsonMapaCalendario = RegistrarController::jsonMapaCalendario($mapaCalendario ?? []);
 ?>
 <section class="space-y-5">
-    <?php if (!empty($salvo)): ?>
+    <?php if (!empty($excluido)): ?>
+        <p role="status" class="rounded-xl border border-emerald-200 border-l-4 border-l-emerald-600 bg-emerald-50 px-4 py-3.5 text-sm font-medium text-emerald-900 shadow-2xs">
+            <?= htmlspecialchars((string) $excluido) ?>
+        </p>
+    <?php elseif (!empty($salvo)): ?>
         <p role="status" class="rounded-xl border border-emerald-200 border-l-4 border-l-emerald-600 bg-emerald-50 px-4 py-3.5 text-sm font-medium text-emerald-900 shadow-2xs">
             Registro atualizado.
         </p>
