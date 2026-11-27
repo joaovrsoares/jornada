@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\AuthController;
 use App\Controllers\ConfiguracoesController;
 use App\Controllers\HomeController;
 use App\Controllers\JornadaController;
@@ -10,6 +11,13 @@ use App\Controllers\RelatoriosController;
 use App\Core\Router;
 
 /** @var Router $router */
+
+# Entrada e saída da conta
+$router->get('/login', [AuthController::class, 'loginForm']);
+$router->post('/login', [AuthController::class, 'login']);
+$router->get('/cadastro', [AuthController::class, 'cadastroForm']);
+$router->post('/cadastro', [AuthController::class, 'cadastrar']);
+$router->post('/logout', [AuthController::class, 'logout']);
 
 $router->get('/', [HomeController::class, 'index']);
 
@@ -30,3 +38,4 @@ $router->get('/relatorios/exportar', [RelatoriosController::class, 'exportar']);
 
 $router->get('/configuracoes', [ConfiguracoesController::class, 'index']);
 $router->post('/configuracoes', [ConfiguracoesController::class, 'salvar']);
+$router->post('/configuracoes/senha', [ConfiguracoesController::class, 'alterarSenha']);

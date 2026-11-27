@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 208 64" width="208" height="64" role="img" aria-labelledby="titulo-jornada-logo desc-jornada-logo">
+  <title id="titulo-jornada-logo">Jornada — ponto &amp; auditoria</title>
+  <desc id="desc-jornada-logo">Logotipo horizontal do Jornada: marca escura com J branco e ponto turquesa, nome Jornada e a descrição ponto &amp; auditoria.</desc>
+  <rect width="64" height="64" rx="14" fill="#18181b"/>
+  <path fill="#ffffff" d="M15.2 46.136328125V38.788671875Q17.04765625 40.679296875 19.1423828125 41.667578125Q21.237109375 42.655859375 23.3640625 42.655859375Q25.85625 42.655859375 27.01640625 41.409765625Q28.1765625 40.163671875 28.1765625 37.43515625V21.2359375H20.420703125V15.649999999999999H34.514453125V37.43515625Q34.514453125 43.300390625 32.0544921875 45.8248046875Q29.59453125 48.34921875 23.944140625 48.34921875Q21.903125 48.34921875 19.6794921875 47.790625Q17.455859375 47.23203125 15.2 46.136328125Z"/>
+  <circle cx="44" cy="37.5" r="5.2" fill="#2dd4bf"/>
+  <text x="80" y="35" font-family="'Nimbus Sans', 'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="700" letter-spacing="-0.4" fill="#18181b">Jornada</text>
+  <text x="80.5" y="50.5" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700" letter-spacing="0.3" fill="#71717a">ponto &amp; auditoria</text>
+</svg>

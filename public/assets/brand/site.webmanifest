@@ -1,0 +1,76 @@
+{
+  "id": "/",
+  "name": "Jornada — ponto & auditoria",
+  "short_name": "Jornada",
+  "description": "Controle de ponto, comprovantes e auditoria da jornada.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#f5f5f4",
+  "theme_color": "#18181b",
+  "categories": ["productivity", "business"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/assets/brand/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brand/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brand/app-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/brand/app-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/brand/app-icon-monochrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Registrar ponto",
+      "short_name": "Registrar",
+      "description": "Abrir a tela de registro de ponto.",
+      "url": "/registrar",
+      "icons": [
+        {
+          "src": "/assets/brand/app-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Espelho do mês",
+      "short_name": "Espelho",
+      "description": "Abrir o espelho de ponto do mês.",
+      "url": "/jornada",
+      "icons": [
+        {
+          "src": "/assets/brand/app-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

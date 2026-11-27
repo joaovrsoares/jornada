@@ -33,6 +33,7 @@ $dataBr = date('d/m/Y', strtotime((string) $item['data']));
     data-confirmar-titulo="Excluir registro?"
     data-confirmar-acao="Excluir"
 >
+    <?= \App\Core\Csrf::campo() ?>
     <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
     <input type="hidden" name="mes" value="<?= htmlspecialchars($mes) ?>">
     <button

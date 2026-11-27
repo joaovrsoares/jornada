@@ -10,6 +10,11 @@ DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-root_dev}"
 mkdir -p /var/log/supervisor /run/mysqld /var/lib/mysql
 chown -R mysql:mysql /run/mysqld /var/lib/mysql
 
+# Garante que o PHP-FPM consiga gravar os comprovantes enviados.
+mkdir -p /var/www/storage/comprovantes
+chown -R www-data:www-data /var/www/storage
+chmod -R u+rwX,g+rwX /var/www/storage
+
 # Inicializa o banco de dados se ainda não existir
 if [ ! -d "/var/lib/mysql/mysql" ]; then
     echo "==> Inicializando diretório de dados do MariaDB..."

@@ -1,21 +1,19 @@
-# Jornada
-Um projeto em desenvolvimento para auxiliar na organização do ponto pessoal, controlando os horários de entrada e saída, horas extras, faltas e banco de horas.
+![Jornada](public/assets/brand/og-jornada.png)<br>
+Um projeto em desenvolvimento para auxiliar na organização do ponto pessoal, controlando os horários de entrada e saída, horas extras, faltas e banco de horas.<br>
+O Jornada está disponível em [https://jornada.joaovrsoares.dev/](https://jornada.joaovrsoares.dev/).
 
 ### Execução
 Para executar e desenvolver, é necessário o Docker e o Docker Compose.<br>
 Windows: `winget install --id Docker.DockerDesktop`<br>
-macOS: `brew install --cask docker`<br>
+macOS: `brew install --cask docker docker-compose docker-desktop`<br>
 
 Com o docker instalado, é só rodar o build:
 ```bash
-git clone https://github.com/joaovrsoares/jornada.git
-
-cd jornada
-
-docker compose -f compose.dev.yaml up --build -d
+git clone https://github.com/joaovrsoares/jornada.git && cd jornada
+docker compose -f compose.dev.yaml up --build -d --remove-orphans
 ```
 
 Para acessar o banco de dados, utilizar o seguinte comando:
 ```bash
-docker compose -f compose.dev.yaml exec db mariadb -u jornada -pjornada_dev jornada
+docker compose -f compose.dev.yaml exec app mariadb -u jornada -pjornada_dev jornada
 ```

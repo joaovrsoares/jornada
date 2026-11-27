@@ -256,6 +256,7 @@ foreach (array_keys($camposBatida) as $campoDia) {
                 <?php endif; ?>
 
                 <form method="post" action="/registrar" enctype="multipart/form-data" class="space-y-5">
+                    <?= \App\Core\Csrf::campo() ?>
                     <input type="hidden" name="data" value="<?= htmlspecialchars($registroAtual['data']) ?>">
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-12">
@@ -351,6 +352,7 @@ foreach (array_keys($camposBatida) as $campoDia) {
                         </div>
                         <?php if ($ehOcorrencia): ?>
                             <form method="post" action="/registrar/ocorrencia">
+                                <?= \App\Core\Csrf::campo() ?>
                                 <input type="hidden" name="data" value="<?= htmlspecialchars($registroAtual['data']) ?>">
                                 <input type="hidden" name="tipo" value="normal">
                                 <button
@@ -373,6 +375,7 @@ foreach (array_keys($camposBatida) as $campoDia) {
                             data-confirmar-acao="Lançar ocorrência"
                         <?php endif; ?>
                     >
+                        <?= \App\Core\Csrf::campo() ?>
                         <input type="hidden" name="data" value="<?= htmlspecialchars($registroAtual['data']) ?>">
                         <label class="block flex-1">
                             <span class="block text-xs font-semibold text-zinc-700">Tipo de ocorrência</span>
@@ -399,6 +402,7 @@ foreach (array_keys($camposBatida) as $campoDia) {
                 </div>
             <?php else: ?>
                 <form method="post" action="/jornada/editar" enctype="multipart/form-data" class="space-y-5">
+                    <?= \App\Core\Csrf::campo() ?>
                     <input type="hidden" name="data" value="<?= htmlspecialchars($registroAtual['data']) ?>">
 
                     <div class="max-w-sm">
@@ -524,6 +528,7 @@ foreach (array_keys($camposBatida) as $campoDia) {
                         data-confirmar-titulo="Excluir registro?"
                         data-confirmar-acao="Excluir"
                     >
+                        <?= \App\Core\Csrf::campo() ?>
                         <input type="hidden" name="id" value="<?= (int) $registroAtual['id'] ?>">
                         <input type="hidden" name="mes" value="<?= htmlspecialchars(substr($registroAtual['data'], 0, 7)) ?>">
                     </form>
@@ -539,6 +544,7 @@ foreach (array_keys($camposBatida) as $campoDia) {
                         data-confirmar-titulo="Remover foto?"
                         data-confirmar-acao="Remover foto"
                     >
+                        <?= \App\Core\Csrf::campo() ?>
                         <input type="hidden" name="data" value="<?= htmlspecialchars($registroAtual['data']) ?>">
                         <input type="hidden" name="remover_foto" value="<?= $campoRemover ?>">
                     </form>

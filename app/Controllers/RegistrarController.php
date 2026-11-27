@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
 
@@ -121,22 +122,28 @@ class RegistrarController extends Controller
         }
 
         $usuario = ConfiguracoesController::obterUsuario();
+        $usuarioId = $usuario['id'];
         $cargaDiaria = $usuario['carga_diaria_minutos'];
         $tolerancia = $usuario['tolerancia_minutos'];
 
         $stmtDia = $pdo->prepare(
-            'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
+            'SELECT * FROM registros_ponto WHERE usuario_id = :usuario_id AND data = :data'
         );
-        $stmtDia->execute(['data' => $dataAlvo]);
+        $stmtDia->execute([
+            'usuario_id' => $usuarioId,
+            'data' => $dataAlvo,
+        ]);
         $registroAtual = $stmtDia->fetch() ?: self::REGISTRO_VAZIO + ['data' => $dataAlvo];
 
         $proximaBatida = self::proximaBatida($registroAtual);
 
         $mesAlvo = substr($dataAlvo, 0, 7);
-        $todosRegistros = $pdo->query(
+        $stmtTodos = $pdo->prepare(
             'SELECT data, tipo, entrada, saida_intervalo, retorno_intervalo, saida
-             FROM registros_ponto WHERE usuario_id = 1'
-        )->fetchAll();
+             FROM registros_ponto WHERE usuario_id = :usuario_id'
+        );
+        $stmtTodos->execute(['usuario_id' => $usuarioId]);
+        $todosRegistros = $stmtTodos->fetchAll();
 
         $saldoAnteriorMes = 0;
         foreach ($todosRegistros as $reg) {
@@ -179,6 +186,7 @@ class RegistrarController extends Controller
     private function salvarRegistro(string $modo): void
     {
         $pdo = Database::connection();
+        $usuarioId = (int) Auth::id();
         $data = (string) ($_POST['data'] ?? date('Y-m-d'));
         if (!self::dataValida($data)) {
             $data = date('Y-m-d');
@@ -189,9 +197,12 @@ class RegistrarController extends Controller
             : '/registrar?data=' . urlencode($data);
 
         $stmtDia = $pdo->prepare(
-            'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
+            'SELECT * FROM registros_ponto WHERE usuario_id = :usuario_id AND data = :data'
         );
-        $stmtDia->execute(['data' => $data]);
+        $stmtDia->execute([
+            'usuario_id' => $usuarioId,
+            'data' => $data,
+        ]);
         $existente = $stmtDia->fetch() ?: self::REGISTRO_VAZIO;
 
         $limparHora = static fn(?string $v): ?string => $v === null ? null : (self::horaCurta(trim($v)) ?: null);
@@ -298,7 +309,7 @@ class RegistrarController extends Controller
                 (usuario_id, data, tipo, entrada, saida_intervalo, retorno_intervalo, saida,
                  foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida, observacao)
              VALUES
-                (1, :data, :tipo, :entrada, :saida_intervalo, :retorno_intervalo, :saida,
+                (:usuario_id, :data, :tipo, :entrada, :saida_intervalo, :retorno_intervalo, :saida,
                  :foto_entrada, :foto_saida_intervalo, :foto_retorno_intervalo, :foto_saida, :observacao)
              ON DUPLICATE KEY UPDATE
                 tipo = VALUES(tipo),
@@ -314,6 +325,7 @@ class RegistrarController extends Controller
         );
 
         $stmt->execute([
+            'usuario_id' => $usuarioId,
             'data' => $data,
             'tipo' => $candidato['tipo'],
             'entrada' => $candidato['entrada'],
@@ -337,6 +349,7 @@ class RegistrarController extends Controller
     public function salvarOcorrencia(): void
     {
         $pdo = Database::connection();
+        $usuarioId = (int) Auth::id();
         $data = (string) ($_POST['data'] ?? date('Y-m-d'));
         if (!self::dataValida($data)) {
             $data = date('Y-m-d');
@@ -346,9 +359,12 @@ class RegistrarController extends Controller
         $tipo = (string) ($_POST['tipo'] ?? '');
 
         $stmtDia = $pdo->prepare(
-            'SELECT * FROM registros_ponto WHERE usuario_id = 1 AND data = :data'
+            'SELECT * FROM registros_ponto WHERE usuario_id = :usuario_id AND data = :data'
         );
-        $stmtDia->execute(['data' => $data]);
+        $stmtDia->execute([
+            'usuario_id' => $usuarioId,
+            'data' => $data,
+        ]);
         $existente = $stmtDia->fetch();
 
         if ($tipo === 'normal') {
@@ -357,8 +373,12 @@ class RegistrarController extends Controller
             }
 
             $pdo->prepare(
-                'UPDATE registros_ponto SET tipo = :tipo WHERE usuario_id = 1 AND data = :data'
-            )->execute(['tipo' => 'normal', 'data' => $data]);
+                'UPDATE registros_ponto SET tipo = :tipo WHERE usuario_id = :usuario_id AND data = :data'
+            )->execute([
+                'tipo' => 'normal',
+                'usuario_id' => $usuarioId,
+                'data' => $data,
+            ]);
 
             $this->redirect($urlVoltar, [
                 'ocorrencia' => 'Ocorrência removida. ' . date('d/m/Y', strtotime($data)) . ' voltou a ser um dia normal.',
@@ -385,7 +405,7 @@ class RegistrarController extends Controller
                 (usuario_id, data, tipo, entrada, saida_intervalo, retorno_intervalo, saida,
                  foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida, observacao)
              VALUES
-                (1, :data, :tipo, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, :observacao)
+                (:usuario_id, :data, :tipo, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, :observacao)
              ON DUPLICATE KEY UPDATE
                 tipo = VALUES(tipo),
                 entrada = NULL,
@@ -400,6 +420,7 @@ class RegistrarController extends Controller
         );
 
         $stmt->execute([
+            'usuario_id' => $usuarioId,
             'data' => $data,
             'tipo' => $tipo,
             'observacao' => $existente['observacao'] ?? null,
@@ -427,6 +448,7 @@ class RegistrarController extends Controller
         }
 
         $pdo = Database::connection();
+        $usuarioId = (int) Auth::id();
         $colFoto = 'foto_' . $campo;
         $relativo = $this->fotoRelativa($data, $campo);
 
@@ -437,9 +459,12 @@ class RegistrarController extends Controller
         $this->removerArquivoFoto($relativo);
 
         $stmtAtualiza = $pdo->prepare(
-            "UPDATE registros_ponto SET {$colFoto} = NULL WHERE usuario_id = 1 AND data = :data"
+            "UPDATE registros_ponto SET {$colFoto} = NULL WHERE usuario_id = :usuario_id AND data = :data"
         );
-        $stmtAtualiza->execute(['data' => $data]);
+        $stmtAtualiza->execute([
+            'usuario_id' => $usuarioId,
+            'data' => $data,
+        ]);
 
         $this->redirect($voltar, ['foto_removida' => self::CAMPOS_BATIDA[$campo]]);
     }
@@ -496,11 +521,15 @@ class RegistrarController extends Controller
 
         if ($id > 0) {
             $pdo = Database::connection();
+            $usuarioId = (int) Auth::id();
             $stmtBusca = $pdo->prepare(
                 'SELECT data, foto_entrada, foto_saida_intervalo, foto_retorno_intervalo, foto_saida
-                 FROM registros_ponto WHERE id = :id AND usuario_id = 1'
+                 FROM registros_ponto WHERE id = :id AND usuario_id = :usuario_id'
             );
-            $stmtBusca->execute(['id' => $id]);
+            $stmtBusca->execute([
+                'id' => $id,
+                'usuario_id' => $usuarioId,
+            ]);
             $reg = $stmtBusca->fetch();
 
             if ($reg) {
@@ -510,9 +539,12 @@ class RegistrarController extends Controller
             }
 
             $stmt = $pdo->prepare(
-                'DELETE FROM registros_ponto WHERE id = :id AND usuario_id = 1'
+                'DELETE FROM registros_ponto WHERE id = :id AND usuario_id = :usuario_id'
             );
-            $stmt->execute(['id' => $id]);
+            $stmt->execute([
+                'id' => $id,
+                'usuario_id' => $usuarioId,
+            ]);
 
             if ($reg) {
                 $this->redirect(
@@ -529,9 +561,12 @@ class RegistrarController extends Controller
     {
         $colFoto = 'foto_' . $campo;
         $stmt = Database::connection()->prepare(
-            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = 1 AND data = :data"
+            "SELECT {$colFoto} FROM registros_ponto WHERE usuario_id = :usuario_id AND data = :data"
         );
-        $stmt->execute(['data' => $data]);
+        $stmt->execute([
+            'usuario_id' => (int) Auth::id(),
+            'data' => $data,
+        ]);
         $relativo = $stmt->fetchColumn();
 
         return $relativo ? (string) $relativo : null;
@@ -585,7 +620,7 @@ class RegistrarController extends Controller
             return [null, 'Não foi possível criar a pasta de armazenamento de comprovantes.'];
         }
 
-        $nomeArquivo = "1_{$data}_{$campo}.{$ext}";
+        $nomeArquivo = (int) Auth::id() . "_{$data}_{$campo}.{$ext}";
         $relativo = "{$subpasta}/{$nomeArquivo}";
         $destinoAbsoluto = "{$dirDestino}/{$nomeArquivo}";
 
@@ -773,9 +808,11 @@ class RegistrarController extends Controller
     public static function obterMapaCalendario(?array $registros = null): array
     {
         if ($registros === null) {
-            $registros = Database::connection()->query(
-                'SELECT data, tipo, entrada, saida FROM registros_ponto WHERE usuario_id = 1'
-            )->fetchAll();
+            $stmt = Database::connection()->prepare(
+                'SELECT data, tipo, entrada, saida FROM registros_ponto WHERE usuario_id = :usuario_id'
+            );
+            $stmt->execute(['usuario_id' => (int) Auth::id()]);
+            $registros = $stmt->fetchAll();
         }
 
         $mapa = [];

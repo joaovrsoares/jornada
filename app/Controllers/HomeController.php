@@ -16,12 +16,15 @@ class HomeController extends Controller
         $mesAtual = date('Y-m');
 
         $usuario = ConfiguracoesController::obterUsuario();
+        $usuarioId = $usuario['id'];
         $cargaDiaria = $usuario['carga_diaria_minutos'];
         $tolerancia = $usuario['tolerancia_minutos'];
 
-        $todos = $pdo->query(
-            'SELECT * FROM registros_ponto WHERE usuario_id = 1 ORDER BY data DESC'
-        )->fetchAll();
+        $stmtTodos = $pdo->prepare(
+            'SELECT * FROM registros_ponto WHERE usuario_id = :usuario_id ORDER BY data DESC'
+        );
+        $stmtTodos->execute(['usuario_id' => $usuarioId]);
+        $todos = $stmtTodos->fetchAll();
 
         $registrosMes = [];
         $minutosMes = 0;

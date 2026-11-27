@@ -2,11 +2,18 @@
     declare (strict_types=1);
 
     use App\Controllers\RegistrarController;
+    use App\Core\Auth;
+    use App\Core\Csrf;
 
     /** @var string $conteudo */
     /** @var string|null $titulo */
     /** @var string|null $rotaAtual */
     $rotaAtual = $rotaAtual ?? '/';
+    $usuarioAtual = Auth::usuario();
+    $nomeUsuario = (string) ($usuarioAtual['nome_completo'] ?? 'Minha conta');
+    $primeiroNome = trim((string) ($usuarioAtual['nome'] ?? '')) ?: $nomeUsuario;
+    $emailUsuario = (string) ($usuarioAtual['email'] ?? '');
+    $inicialUsuario = strtoupper(substr($primeiroNome, 0, 1) ?: 'J');
     $emRegistrar = str_starts_with($rotaAtual, '/registrar');
     $emJornada = str_starts_with($rotaAtual, '/jornada');
     $emRelatorios = str_starts_with($rotaAtual, '/relatorios');
@@ -34,6 +41,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($titulo ?? 'Jornada') ?> — Jornada</title>
+    <?php require __DIR__ . '/identidade-visual.php'; ?>
     <link rel="stylesheet" href="/assets/css/app.css?v=<?= filemtime(__DIR__ . '/../../../public/assets/css/app.css') ?>">
 </head>
 
@@ -42,10 +50,13 @@
         <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
             <div class="flex items-center gap-3">
                 <a href="/<?= $sufixoMes ?>" class="group inline-flex items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
-                    <span class="flex size-9 items-center justify-center rounded-lg bg-zinc-900 font-mono text-sm font-bold text-white shadow-2xs transition-transform group-hover:scale-[1.02]">
-                        <span class="mr-0.5">J</span>
-                        <span class="size-1.5 rounded-full bg-teal-400" aria-hidden="true"></span>
-                    </span>
+                    <img
+                        src="/assets/brand/logo-jornada-mark.svg?v=<?= $versaoBrand ?>"
+                        alt=""
+                        width="36"
+                        height="36"
+                        class="size-9 rounded-lg shadow-2xs transition-transform group-hover:scale-[1.02]"
+                    >
                     <div class="flex flex-col">
                         <span class="text-base font-bold tracking-tight text-zinc-900 leading-none">Jornada</span>
                         <span class="mt-0.5 font-mono text-[10px] font-medium text-zinc-500">ponto &amp; auditoria</span>
@@ -68,15 +79,70 @@
                 </a>
             </nav>
 
-            <div class="flex items-center gap-2">
-                <a
-                    href="/configuracoes"
-                    class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 <?= $emConfig ? 'border-teal-600/30 bg-teal-50 font-semibold text-teal-800' : 'border-stone-200 bg-stone-50 text-zinc-700 hover:bg-stone-100 hover:text-zinc-900' ?>"
-                    title="Ajustes de jornada"
+            <div class="relative flex min-w-0 items-center justify-end" data-menu-perfil>
+                <button
+                    type="button"
+                    data-menu-perfil-botao
+                    aria-expanded="false"
+                    aria-controls="menu-perfil-painel"
+                    aria-label="Abrir menu da conta"
+                    title="<?= htmlspecialchars($nomeUsuario) ?> — abrir menu da conta"
+                    class="inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-full p-0.5 text-sm font-semibold text-zinc-800 transition-colors hover:bg-stone-100 hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 aria-expanded:bg-stone-100"
                 >
-                    <?= RegistrarController::icone('ajustes', 'size-4 text-zinc-500') ?>
-                    <span class="hidden sm:inline">Ajustes</span>
-                </a>
+                    <span class="max-w-24 truncate pl-1.5 md:max-w-40 lg:max-w-64">
+                        <?= htmlspecialchars($primeiroNome) ?>
+                    </span>
+                    <span
+                        class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xs font-bold text-white ring-1 ring-inset ring-zinc-700"
+                        aria-hidden="true"
+                    >
+                        <?= htmlspecialchars($inicialUsuario) ?>
+                    </span>
+                </button>
+
+                <div
+                    id="menu-perfil-painel"
+                    data-menu-perfil-painel
+                    class="absolute top-full right-0 z-50 mt-2 hidden w-64 overflow-hidden rounded-2xl border border-stone-200/90 bg-white shadow-xl"
+                >
+                    <div class="border-b border-stone-200/90 px-4 py-3.5">
+                        <p class="truncate text-sm font-bold text-zinc-900"><?= htmlspecialchars($nomeUsuario) ?></p>
+                        <p class="mt-0.5 truncate text-[11px] text-zinc-500"><?= htmlspecialchars($emailUsuario !== '' ? $emailUsuario : 'Conta Jornada') ?></p>
+                    </div>
+
+                    <div class="p-1.5">
+                        <a
+                            href="/configuracoes"
+                            class="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-stone-100 hover:text-zinc-900 focus:outline-none focus-visible:bg-stone-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-600"
+                        >
+                            <?= RegistrarController::icone('ajustes', 'size-4 text-zinc-500') ?>
+                            Ajustes
+                        </a>
+
+                        <form method="post" action="/logout" class="mt-0.5">
+                            <?= Csrf::campo() ?>
+                            <button
+                                type="submit"
+                                class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-800 focus:outline-none focus-visible:bg-red-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600"
+                            >
+                                <svg class="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                Sair
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <noscript>
+                    <span class="ml-2 flex items-center gap-2">
+                        <a href="/configuracoes" class="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-2 text-xs font-medium text-zinc-700 hover:bg-stone-100">Ajustes</a>
+                        <form method="post" action="/logout">
+                            <?= Csrf::campo() ?>
+                            <button type="submit" class="cursor-pointer rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-2 text-xs font-medium text-red-700 hover:bg-red-50">Sair</button>
+                        </form>
+                    </span>
+                </noscript>
             </div>
         </div>
     </header>
@@ -201,6 +267,8 @@
         </div>
     </dialog>
 
+    <script src="/assets/js/menu-perfil.js?v=<?= filemtime(__DIR__ . '/../../../public/assets/js/menu-perfil.js') ?>"></script>
+    <script src="/assets/js/pwa.js?v=<?= filemtime(__DIR__ . '/../../../public/assets/js/pwa.js') ?>"></script>
     <script src="/assets/js/app.js?v=<?= filemtime(__DIR__ . '/../../../public/assets/js/app.js') ?>"></script>
 </body>
 </html>

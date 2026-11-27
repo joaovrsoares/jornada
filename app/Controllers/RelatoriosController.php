@@ -89,16 +89,19 @@ class RelatoriosController extends Controller
         $mes = RegistrarController::mesValido($mesInput) ? $mesInput : date('Y-m');
 
         $usuario = ConfiguracoesController::obterUsuario();
-        $nome = $usuario['nome'];
+        $nome = $usuario['nome_completo'];
         $cargaDiaria = $usuario['carga_diaria_minutos'];
         $tolerancia = $usuario['tolerancia_minutos'];
 
         $stmt = $pdo->prepare(
             'SELECT * FROM registros_ponto
-             WHERE usuario_id = 1 AND data LIKE :mes
+             WHERE usuario_id = :usuario_id AND data LIKE :mes
              ORDER BY data ASC'
         );
-        $stmt->execute(['mes' => $mes . '-%']);
+        $stmt->execute([
+            'usuario_id' => $usuario['id'],
+            'mes' => $mes . '-%',
+        ]);
         $registros = $stmt->fetchAll();
 
         $totalTrabalhado = 0;
